@@ -1,7 +1,7 @@
 #!/bin/bash -ex
 
 INDEX_IMAGES="$*"
-IIB_SOURCE=registry-proxy.engineering.redhat.com
+: ${IIB_SOURCE=registry-proxy.engineering.redhat.com}
 : ${IIB_NAMESPACE=openshift-marketplace}
 : ${QUAY_NAMESPACE=abeekhof}
 : ${FILTER=gitops}
@@ -34,7 +34,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	cd $IIB_PATH
 
 	echo "Creating $IIB manifests"
-	oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog-$IIB.dry.log
+	oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog-$IIB.log
 
 	echo "Mirroring $IIB catalog" 
 	oc image mirror $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee image-$IIB.log 
@@ -49,7 +49,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	sed -i "s/name: iib-0$/name: iib-$IIB/" imageContentSourcePolicy.yaml
 
 	# The mapping is broken for some images
-	sed -i 's@rh-osbs-red-hat@red-hat@' imageContentSourcePolicy.yaml
+	# sed -i 's@rh-osbs-red-hat@red-hat@' imageContentSourcePolicy.yaml
 	sed -i 's@rh-osbs/workload-availability@rh-osbs/red-hat-workload-availability@g' imageContentSourcePolicy.yaml
 	sed -i 's@healthcheck-rhel8-operator@healthcheck-operator@g' imageContentSourcePolicy.yaml
 	sed -i 's@node-remediation-console-rhel8@node-remediation-console@g' imageContentSourcePolicy.yaml
@@ -59,7 +59,9 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	while [ "x$channel" = x ]; do
 	    echo "Waiting for the package manifest to appear"
 	    sleep $sTime
-	    channel=$(oc get packagemanifests  -l 'catalog=iib-489388' --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
+	    set +e
+	    channel=$(oc get  -n ${IIB_NAMESPACE} packagemanifests  -l 'catalog=iib-489388' --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
+	    set -e
 	    sTime=60
 	done
 	images=$(oc get packagemanifests  -l 'catalog=iib-489388' --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | tr ',][' ' ' | tr -d '"' )
@@ -67,7 +69,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    sha=$(echo $image | sed 's/.*@/@/')
 	    unversioned=$(echo $image | sed 's/@.*//')
 	    mirrored=$(grep -B 1 $unversioned imageContentSourcePolicy.yaml | head -n 1 | sed  's/- //')
-	    oc image mirror $mirrored$sha=${MIRROR_TARGET}/$IIB_NAMESPACE/$(basename $mirrored) --insecure 2>&1 | tee image-$(basename $unversioned).log
+	    oc image mirror $mirrored$sha=${MIRROR_TARGET}/$IIB_NAMESPACE/$(basename $mirrored):$IIB --insecure 2>&1 | tee image-$(basename $unversioned).log
 	done
 
 	# Point to our mirror instead
@@ -88,7 +90,9 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	#oc adm catalog mirror --insecure --to-manifests=$IIB_PATH $IIB_SOURCE/rh-osbs/iib:$IIB ${IIB_TARGET}/$IIB_NAMESPACE 2>&1 | tee catalog-$IIB.log
 	#sed -i "s/${MIRROR_TARGET}/image-registry.openshift-image-registry.svc:5000/" $IIB_PATH/imageContentSourcePolicy.yaml 
 done
-sleep 10
+echo Waiting for the mirror to start applying
+while [ "x$(oc get mcp | grep 'worker.*False.*True.*False')" = x ]; do sleep 60; done     
+echo Waiting for the mirror to finish applying
 while [ "x$(oc get mcp | grep 'worker.*True.*False.*False')" = x ]; do sleep 60; done     
 
 
