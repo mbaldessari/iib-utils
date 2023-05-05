@@ -57,10 +57,10 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	cd $IIB_PATH
 
 	echo "Creating $IIB manifests"
-	oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog-$IIB.log
+	oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
 
 	echo "Mirroring $IIB catalog" 
-	oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee image-$IIB.log 
+	oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee iib.log 
 
 	sed -i "s/name: iib$/name: iib-$IIB/" catalogSource.yaml  
 	sed -i "s@$IIB_SOURCE/rh-osbs/rh-osbs-@$IIB_TARGET@" catalogSource.yaml
@@ -87,15 +87,23 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    set -e
 	    sTime=60
 	done
-	bundle=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
-	images=$(oc get packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | tr ',][' ' ' | tr -d '"' )
+
+	echo "" > mirror.map
+	head -n 9 imageContentSourcePolicy.yaml > icsp.yaml
+
+	echo "Handle the operator bundle"
+	image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
+	mirrored=$MIRROR_TARGET/$IIB_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
+	    
+	echo $image=$mirrored:$IIB >> mirror.map
+	echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
+	
 
 #  - image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a
 #+ oc image mirror registry-proxy.engineering.redhat.com/rh-osbs/rh-osbs-openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a=default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/rh-osbs-openshift-gitops-1-gitops-operator-bundle:489388 --insecure
 	
-	echo "" > mirror.map
-	head -n 9 imageContentSourcePolicy.yaml > icsp.yaml
-	for image in $bundle $images; do
+	images=$(oc get packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | tr ',][' ' ' | tr -d '"' )
+	for image in $images; do
 	    # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
 	    # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator:2a416676
 	    # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
@@ -103,15 +111,14 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
 	    mirrored=$MIRROR_TARGET/$IIB_NAMESPACE/$(basename $source )
 	    
-	    echo $source$sha=$mirrored:$IIB >> mirror.map
-	    
+	    echo $source$sha=$mirrored:$IIB >> mirror.map	    
 	    echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
 
 	    
 	done
 
 	cat mirror.map
-	oc image mirror -a $PULLSECRET -f mirror.map --insecure $MIRROR_ARGS | tee images.log
+	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure $MIRROR_ARGS | tee images.log
 
 	cat icsp.yaml
 	oc apply -f icsp.yaml
