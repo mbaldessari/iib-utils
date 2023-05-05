@@ -92,33 +92,31 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 #  - image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a
 #+ oc image mirror registry-proxy.engineering.redhat.com/rh-osbs/rh-osbs-openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a=default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/rh-osbs-openshift-gitops-1-gitops-operator-bundle:489388 --insecure
 	
-	bundle=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
-	for image in $bundle $images; do
-	    sha=$(echo $image | sed 's/.*@/@/')
-	    unversioned=$(echo $image | sed 's/@.*//')
-	    mirrored=$(grep -B 1 source:.*$unversioned imageContentSourcePolicy.yaml | head -n 1 | sed -e 's/- //' -e 's@rh-osbs/rh-osbs-@rh-osbs/@' )
-	    oc image mirror -a $PULLSECRET $mirrored$sha=${MIRROR_TARGET}/$IIB_NAMESPACE/$(basename $mirrored):$IIB --insecure $MIRROR_ARGS 2>&1 | tee image-$(basename $unversioned).log
-	done
-
-	# Start constructing a filtered version
+	echo "" > mirror.map
 	head -n 9 imageContentSourcePolicy.yaml > icsp.yaml
 	for image in $bundle $images; do
-	    unversioned=$(echo $image | sed 's/@.*//')
-	    grep --no-group-separator --color=never -B 2 source:.*$unversioned imageContentSourcePolicy.yaml | sed -e 's@rh-osbs/rh-osbs-@rh-osbs/@' >> icsp.yaml
+	    # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
+	    # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator:2a416676
+	    # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
+	    sha=$(echo $image | sed 's/.*@/@/')
+	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
+	    mirrored=$MIRROR_TARGET/$IIB_NAMESPACE/$(basename $source )
+	    
+	    echo $source$sha=$mirrored:$IIB >> mirror.map
+	    
+	    echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
+
+	    
 	done
 
-	# Point to our mirror instead
-	#sed -i "s@- $IIB_SOURCE/rh-osbs@- image-registry.openshift-image-registry.svc:5000/$IIB_NAMESPACE@" icsp.yaml
-	sed -i "s@- $IIB_SOURCE/rh-osbs@- $MIRROR_TARGET/$IIB_NAMESPACE@" icsp.yaml
-
+	cat mirror.map
+	oc image mirror -a $PULLSECRET -f mirror.map --insecure $MIRROR_ARGS | tee images.log
 
 	cat icsp.yaml
 	oc apply -f icsp.yaml
 	cd ..
-
-	#oc adm catalog mirror --insecure --to-manifests=$IIB_PATH $IIB_SOURCE/rh-osbs/iib:$IIB ${IIB_TARGET}/$IIB_NAMESPACE 2>&1 | tee catalog-$IIB.log
-	#sed -i "s/${MIRROR_TARGET}/image-registry.openshift-image-registry.svc:5000/" $IIB_PATH/imageContentSourcePolicy.yaml 
 done
+
 echo Waiting for the mirror to start applying
 oc get mcp
 while [ "x$(oc get mcp | grep 'worker.*False.*True.*False')" = x ]; do sleep 10; done     
