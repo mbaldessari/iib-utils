@@ -31,7 +31,7 @@ grep -q $MIRROR_TARGET $PULLSECRET
 rc=$?
 set -e
 if [ $rc = 1 ]; then
-    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > combined.conf
+    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64 -w0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > combined.conf
     oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=combined.conf
     rm -f combined.conf
     oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
