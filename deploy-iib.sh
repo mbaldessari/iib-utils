@@ -2,10 +2,9 @@
 
 INDEX_IMAGES="$*"
 : ${IIB_SOURCE=registry-proxy.engineering.redhat.com}
-: ${IIB_NAMESPACE=openshift-marketplace}
-: ${QUAY_NAMESPACE=abeekhof}
+: ${MIRROR_NAMESPACE=openshift-marketplace}
+: ${IIB_NAMESPACE=abeekhof}
 : ${FILTER=gitops}
-: ${OCP=12}
 : ${INSTALL=0}
 : ${MIRROR_ARGS=""}
 
@@ -17,6 +16,10 @@ fi
 echo "Enabling the built-in registry"
 oc patch configs.imageregistry.operator.openshift.io/cluster --patch '{"spec":{"defaultRoute":true}}' --type=merge
 export MIRROR_TARGET=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}') 
+
+# doesn't work...
+#echo "Allow everyone to pull from the internal registry"
+#oc -n $MIRROR_NAMESPACE policy add-role-to-group registry-viewer system:unauthenticated
 
 password=$(oc whoami -t)
 
@@ -41,10 +44,11 @@ echo "Giving permission for the cluster to access the registries"
 oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"allowedRegistries\":[ \"quay.io\", \"registry.redhat.io\", \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
 oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
 
-IIB_TARGET="quay.io/$QUAY_NAMESPACE/"
-if [ $OCP = 13 ]; then
+IIB_TARGET="quay.io/$IIB_NAMESPACE/"
+OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{print $2}' )
+if [ $OCP -gt 12 ]; then
     # From ocp 4.13, the internal registry supports --keep-manifest-list
-    IIB_TARGET="${MIRROR_TARGET}/$IIB_NAMESPACE/rh-osbs-"
+    IIB_TARGET="${MIRROR_TARGET}/$MIRROR_NAMESPACE/"
     MIRROR_ARGS="$MIRROR_ARGS --keep-manifest-list"
 fi
 
@@ -83,7 +87,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    echo "Waiting for the package manifest to appear"
 	    sleep $sTime
 	    set +e
-	    channel=$(oc get  -n ${IIB_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
+	    channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
 	    set -e
 	    sTime=60
 	done
@@ -93,7 +97,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 
 	echo "Handle the operator bundle"
 	image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
-	mirrored=$MIRROR_TARGET/$IIB_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
+	mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
 	    
 	echo $image=$mirrored:$IIB >> mirror.map
 	echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
@@ -105,11 +109,11 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	images=$(oc get packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | tr ',][' ' ' | tr -d '"' )
 	for image in $images; do
 	    # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
-	    # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator:2a416676
+	    # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator
 	    # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
 	    sha=$(echo $image | sed 's/.*@/@/')
 	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
-	    mirrored=$MIRROR_TARGET/$IIB_NAMESPACE/$(basename $source )
+	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
 	    
 	    echo $source$sha=$mirrored:$IIB >> mirror.map	    
 	    echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
@@ -118,7 +122,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	done
 
 	cat mirror.map
-	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure $MIRROR_ARGS | tee images.log
+	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure $MIRROR_ARGS 2>&1 | tee images.log
 
 	cat icsp.yaml
 	oc apply -f icsp.yaml
