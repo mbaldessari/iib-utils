@@ -114,8 +114,9 @@ install_new_iib
 echo "Handle the operator bundle"
 echo "" > mirror.map
 image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
-mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
+mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//')
 echo "$image=$mirrored:$IIB" >> mirror.map
+image_nohash=$(echo $image | sed -e 's/@.*//')
 
 cat > imagedigestmirror.yaml <<EOF
 apiVersion: config.openshift.io/v1
@@ -126,6 +127,10 @@ metadata:
     name: iib-$IIB
 spec:
     imageDigestMirrors:
+        - mirrors:
+            - $mirrored
+          source: $image_nohash
+          mirrorSourcePolicy: NeverContactSource
 EOF
 
 channel=$(oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
