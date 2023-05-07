@@ -31,7 +31,7 @@ grep -q $MIRROR_TARGET $PULLSECRET
 rc=$?
 set -e
 if [ $rc = 1 ]; then
-    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > combined.conf
+    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > combined.conf
     oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=combined.conf
     rm -f combined.conf
     oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
@@ -49,7 +49,6 @@ OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{prin
 if [ $OCP -gt 12 ]; then
     # From ocp 4.13, the internal registry supports --keep-manifest-list
     IIB_TARGET="${MIRROR_TARGET}/$MIRROR_NAMESPACE/"
-    MIRROR_ARGS="$MIRROR_ARGS --keep-manifest-list"
 fi
 
 for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do 
@@ -89,7 +88,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    set +e
 	    channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
 	    set -e
-	    sTime=60
+	    sTime=20
 	done
 
 	echo "" > mirror.map
@@ -122,7 +121,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	done
 
 	cat mirror.map
-	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure $MIRROR_ARGS 2>&1 | tee images.log
+	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure --keep-manifest-list $MIRROR_ARGS 2>&1 | tee images.log
 
 	cat icsp.yaml
 	oc apply -f icsp.yaml
