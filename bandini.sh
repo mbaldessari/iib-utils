@@ -152,24 +152,29 @@ for image in $images; do
         # me
         found_image=false
         found_source=false
+        found=""
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
                 found_image=true
                 found=$(echo $image | sed -e 's/@.*//')
+                echo "        - mirrors:" >> imagedigestmirror.yaml
+                echo "            - $mirrored" >> imagedigestmirror.yaml
+                echo "          source: $found" >> imagedigestmirror.yaml
+                echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
         fi
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
                 found_source=true
                 found=$(echo $source | sed -e 's/@.*//')
+                echo $found$sha=$mirrored:$IIB >> mirror.map
+                echo "        - mirrors:" >> imagedigestmirror.yaml
+                echo "            - $mirrored" >> imagedigestmirror.yaml
+                echo "          source: $found" >> imagedigestmirror.yaml
+                echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
         fi
         if [ $found_image = false ] && [ $found_source = false ]; then
                 echo "Both not found ${image} -> ${source}"
                 exit 1
         fi
 
-        echo $found$sha=$mirrored:$IIB >> mirror.map
-        echo "        - mirrors:" >> imagedigestmirror.yaml
-        echo "            - $mirrored" >> imagedigestmirror.yaml
-        echo "          source: $found" >> imagedigestmirror.yaml
-        echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
 done
 oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee images.log
 
