@@ -58,19 +58,6 @@ function wait_for_new_catalog() {
         done
 }
 
-function apply_image_digest_mirror_set() {
-        GITROOT=$(git rev-parse --show-toplevel)
-        MIRRORSET="${GITROOT}/imagedigestmirrorset.yaml"
-        IIB_TARGET_NO_SLASH=${IIB_TARGET%/}
-        sed -e "s@TEMPLATEROUTE@${IIB_TARGET_NO_SLASH}@" -e "s@TEMPLATESOURCE@${IIB_SOURCE}/rh-osbs@" "${MIRRORSET}" | oc apply -f-
-        # FIXME(bandini): arbitrary wait for MCP to start applying
-        sleep 5
-        echo "Waiting for the mirror to start applying"
-        while ! oc get mcp | grep -e 'worker.*False.*True.*False'; do sleep 10; done
-        echo "Waiting for the mirror to finish applying"
-        while ! oc get mcp | grep 'worker.*True.*False.*False'; do sleep 10; done
-}
-
 function install_new_iib() {
         local COUNTER=0
         echo "Processing $INDEX_IMAGE"
@@ -105,6 +92,16 @@ function install_new_iib() {
         wait_for_new_catalog openshift-gitops-operator "${IIB}"
 }
 
+function wait_for_mcp_completion() {
+        # FIXME(bandini): arbitrary wait for MCP to start applying
+        sleep 5
+        echo "Waiting for the mirror to start applying"
+        while ! oc get mcp | grep -e 'worker.*False.*True.*False'; do sleep 10; done
+        echo "Waiting for the mirror to finish applying"
+        while ! oc get mcp | grep 'worker.*True.*False.*False'; do sleep 10; done
+}
+
+
 pre_check
 
 pass=$(oc whoami -t)
@@ -120,6 +117,17 @@ image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
 mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
 echo "$image=$mirrored:$IIB" >> mirror.map
 
+cat > imagedigestmirror.yaml <<EOF
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+    labels:
+        operators.openshift.org/catalog: "true"
+    name: iib-$IIB
+spec:
+    imageDigestMirrors:
+EOF
+
 channel=$(oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
         -o jsonpath='{.items[0].status.defaultChannel}')
 images=$(oc get packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
@@ -132,6 +140,11 @@ for image in $images; do
         sha=$(echo $image | sed 's/.*@/@/')
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
+
+        # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
+        # image does not exist on registry-proxy but only on registre.redhat.io
+        # contrary to what mapping.txt and imageContentSourcePolicy.yaml tell
+        # me
         found_image=false
         found_source=false
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
@@ -148,9 +161,16 @@ for image in $images; do
         fi
 
         echo $found$sha=$mirrored:$IIB >> mirror.map
+        echo "        - mirrors:" >> imagedigestmirror.yaml
+        echo "            - $mirrored" >> imagedigestmirror.yaml
+        echo "          source: $found" >> imagedigestmirror.yaml
+        echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
 done
 oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee images.log
 
-apply_image_digest_mirror_set
+# apply the mirror changes
+oc apply -f imagedigestmirror.yaml
+
+wait_for_mcp_completion
 
 popd
