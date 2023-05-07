@@ -146,6 +146,16 @@ for image in $images; do
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
 
+        image_nosha=$(echo $image | sed -e 's/@.*//')
+        source_nosha=$(echo $source | sed -e 's/@.*//')
+        echo "        - mirrors:" >> imagedigestmirror.yaml
+        echo "            - $mirrored" >> imagedigestmirror.yaml
+        echo "          source: $image_nosha" >> imagedigestmirror.yaml
+        echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
+        echo "        - mirrors:" >> imagedigestmirror.yaml
+        echo "            - $mirrored" >> imagedigestmirror.yaml
+        echo "          source: $source_nosha" >> imagedigestmirror.yaml
+        echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
         # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
         # image does not exist on registry-proxy but only on registre.redhat.io
         # contrary to what mapping.txt and imageContentSourcePolicy.yaml tell
@@ -155,20 +165,11 @@ for image in $images; do
         found=""
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
                 found_image=true
-                found=$(echo $image | sed -e 's/@.*//')
-                echo "        - mirrors:" >> imagedigestmirror.yaml
-                echo "            - $mirrored" >> imagedigestmirror.yaml
-                echo "          source: $found" >> imagedigestmirror.yaml
-                echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
         fi
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
                 found_source=true
                 found=$(echo $source | sed -e 's/@.*//')
                 echo $found$sha=$mirrored:$IIB >> mirror.map
-                echo "        - mirrors:" >> imagedigestmirror.yaml
-                echo "            - $mirrored" >> imagedigestmirror.yaml
-                echo "          source: $found" >> imagedigestmirror.yaml
-                echo "          mirrorSourcePolicy: NeverContactSource" >> imagedigestmirror.yaml
         fi
         if [ $found_image = false ] && [ $found_source = false ]; then
                 echo "Both not found ${image} -> ${source}"
