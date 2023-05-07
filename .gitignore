@@ -1,2 +1,3 @@
 .dockerconfigjson
 combined.conf
+./manifests-iib-*
