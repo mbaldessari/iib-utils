@@ -54,6 +54,12 @@ function wait_for_new_catalog() {
         done
 }
 
+function apply_image_digest_mirror_set() {
+        GITROOT=$(git rev-parse --show-toplevel)
+        MIRRORSET="${GITROOT}/imagedigestmirrorset.yaml"
+        sed -e "s@TEMPLATEROUTE@${IIB_TARGET}@" -e "s@TEMPLATESOURCE@${IIB_SOURCE}/rh-osbs@" "${MIRRORSET}" | oc apply -f-
+}
+
 
 pass=$(oc whoami -t)
 PULLSECRET=$PWD/.dockerconfigjson
