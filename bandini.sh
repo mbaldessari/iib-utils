@@ -132,8 +132,22 @@ for image in $images; do
         sha=$(echo $image | sed 's/.*@/@/')
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
+        found_image=false
+        found_source=false
+        if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
+                found_image=true
+                found=$(echo $image | sed -e 's/@.*//')
+        fi
+        if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
+                found_source=true
+                found=$(echo $source | sed -e 's/@.*//')
+        fi
+        if [ $found_image = false ] && [ $found_source = false ]; then
+                echo "Both not found ${image} -> ${source}"
+                exit 1
+        fi
 
-        echo $source$sha=$mirrored:$IIB >> mirror.map
+        echo $found$sha=$mirrored:$IIB >> mirror.map
 done
 oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee images.log
 
