@@ -133,7 +133,7 @@ for image in $images; do
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
 
-        echo $source$sha=$mirrored:$IIB >> mirror.map	    
+        echo $source$sha=$mirrored:$IIB >> mirror.map
 done
 oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee images.log
 
