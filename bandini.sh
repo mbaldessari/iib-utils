@@ -61,10 +61,12 @@ function wait_for_new_catalog() {
 function apply_image_digest_mirror_set() {
         GITROOT=$(git rev-parse --show-toplevel)
         MIRRORSET="${GITROOT}/imagedigestmirrorset.yaml"
-        sed -e "s@TEMPLATEROUTE@${IIB_TARGET}@" -e "s@TEMPLATESOURCE@${IIB_SOURCE}/rh-osbs@" "${MIRRORSET}" | oc apply -f-
+        IIB_TARGET_NO_SLASH=${IIB_TARGET%/}
+        sed -e "s@TEMPLATEROUTE@${IIB_TARGET_NO_SLASH}@" -e "s@TEMPLATESOURCE@${IIB_SOURCE}/rh-osbs@" "${MIRRORSET}" | oc apply -f-
 }
 
 function install_new_iib() {
+        local COUNTER=0
         echo "Processing $INDEX_IMAGE"
         export IIB=$(echo $INDEX_IMAGE | sed 's/.*://')
         export IIB_PATH=$PWD/manifests-iib-$IIB
@@ -76,7 +78,11 @@ function install_new_iib() {
 
         echo "Mirroring $IIB catalog"
         # FIXME(bandini): this sometimes fails and needs a retry mechanism
-        oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee iib.log
+        while [ ${COUNTER} -lt 3 ]; do
+          oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee iib.log
+          COUNTER=$((COUNTER+1))
+          sleep 1
+        done
 
         sed -i "s/name: iib$/name: iib-$IIB/" catalogSource.yaml
         sed -i "s@$IIB_SOURCE/rh-osbs/rh-osbs-@$IIB_TARGET@" catalogSource.yaml
