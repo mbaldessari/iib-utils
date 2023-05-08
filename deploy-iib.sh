@@ -2,16 +2,14 @@
 
 INDEX_IMAGES="$*"
 : ${IIB_SOURCE=registry-proxy.engineering.redhat.com}
-: ${MIRROR_NAMESPACE=openshift-marketplace}
-: ${IIB_NAMESPACE=abeekhof}
-: ${FILTER=gitops}
+: ${MIRROR_NAMESPACE=abeekhof}
 : ${INSTALL=0}
 : ${MIRROR_ARGS=""}
-: ${BUILTIN=1}
+: ${MIRROR_TARGET="internal"}
 
 PULLSECRET=$PWD/.dockerconfigjson
 
-if [ $BUILTIN = 1 ]; then
+if [ $MIRROR_TARGET = "internal" ]; then
     if [ $(oc whoami -t | wc -c) != 51 ]; then
 	echo "You need to 'oc login' first"
 	false
@@ -20,6 +18,7 @@ if [ $BUILTIN = 1 ]; then
     echo "Enabling the built-in registry"
     oc patch configs.imageregistry.operator.openshift.io/cluster --patch '{"spec":{"defaultRoute":true}}' --type=merge
     MIRROR_TARGET=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}') 
+    MIRROR_NAMESPACE=openshift-marketplace
     
 # doesn't work...
 #echo "Allow everyone to pull from the internal registry"
@@ -53,11 +52,9 @@ if [ $BUILTIN = 1 ]; then
     oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
 fi
 
-IIB_TARGET="quay.io/$IIB_NAMESPACE/"
 OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{print $2}' )
 if [ $OCP -gt 12 ]; then
     # From ocp 4.13, the internal registry supports --keep-manifest-list
-    IIB_TARGET="${MIRROR_TARGET}/$MIRROR_NAMESPACE/"
 fi
 
 for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do 
@@ -70,7 +67,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	fi
 	cd $IIB_PATH
 
-	MIRRORED_IIB=${IIB_TARGET}iib
+	MIRRORED_IIB=${MIRROR_TARGET}/$MIRROR_NAMESPACE/iib
 	if [ ! -e imageContentSourcePolicy.yaml ]; then
 	    echo "Creating $IIB manifests"
 	    oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
@@ -82,7 +79,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	CATALOG=cat.yaml
 	cat catalogSource.yaml > $CATALOG
 	sed -i "s/name: iib$/name: iib-$IIB/" $CATALOG  
-	sed -i "s@$IIB_SOURCE/rh-osbs/rh-osbs-@$IIB_TARGET@" $CATALOG
+	sed -i "s@image:.*@image: $MIRRORED_IIB@" $CATALOG
 	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
 	oc apply -f $CATALOG  
 
