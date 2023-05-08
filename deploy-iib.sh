@@ -7,42 +7,51 @@ INDEX_IMAGES="$*"
 : ${FILTER=gitops}
 : ${INSTALL=0}
 : ${MIRROR_ARGS=""}
+: ${BUILTIN=1}
 
-if [ $(oc whoami -t | wc -c) != 51 ]; then
-    echo "You need to 'oc login' first"
-    false
-fi
+PULLSECRET=$PWD/.dockerconfigjson
 
-echo "Enabling the built-in registry"
-oc patch configs.imageregistry.operator.openshift.io/cluster --patch '{"spec":{"defaultRoute":true}}' --type=merge
-export MIRROR_TARGET=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}') 
-
+if [ $BUILTIN = 1 ]; then
+    if [ $(oc whoami -t | wc -c) != 51 ]; then
+	echo "You need to 'oc login' first"
+	false
+    fi
+    
+    echo "Enabling the built-in registry"
+    oc patch configs.imageregistry.operator.openshift.io/cluster --patch '{"spec":{"defaultRoute":true}}' --type=merge
+    MIRROR_TARGET=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}') 
+    
 # doesn't work...
 #echo "Allow everyone to pull from the internal registry"
 #oc -n $MIRROR_NAMESPACE policy add-role-to-group registry-viewer system:unauthenticated
 
-password=$(oc whoami -t)
+    password=$(oc whoami -t)
 
-echo "Authenticating the cluster to the built-in registry"
-PULLSECRET=$PWD/.dockerconfigjson
-oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
-set +e
-grep -q $MIRROR_TARGET $PULLSECRET
-rc=$?
-set -e
-if [ $rc = 1 ]; then
-    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > combined.conf
-    oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=combined.conf
-    rm -f combined.conf
-    oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
+    echo "Authenticating the cluster to the built-in registry"
+    # filename must be .dockerconfigjson for use with 'oc set data' 
+
+    if [ ! -e $PULLSECRET ]; then
+	oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
+    fi
+
+    set +e
+    grep -q $MIRROR_TARGET $PULLSECRET
+    rc=$?
+    set -e
+    
+    if [ $rc = 1 ]; then
+	jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+	jq ".auths += {\"quay.io\": {\"auth\": \"$(echo -n "abeekhof+blueprints:XTYZQFWG21AP0BYVCX7RV5HZLZM87SRGB9F5PPYP6SCRZ4BL75GWW7O9P4C01QYL" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+	oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
+    fi
+
+    echo "Logging into the built-in registry"
+    podman login --authfile $PULLSECRET --tls-verify=false $MIRROR_TARGET 
+
+    echo "Giving permission for the cluster to access the registries"
+    oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"allowedRegistries\":[ \"quay.io\", \"registry.redhat.io\", \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
+    oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
 fi
-
-echo "Logging into the built-in registry"
-podman login --authfile $PULLSECRET --tls-verify=false $MIRROR_TARGET 
-
-echo "Giving permission for the cluster to access the registries"
-oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"allowedRegistries\":[ \"quay.io\", \"registry.redhat.io\", \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
-oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
 
 IIB_TARGET="quay.io/$IIB_NAMESPACE/"
 OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{print $2}' )
@@ -53,32 +62,36 @@ fi
 
 for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do 
 	echo "Processing $IIB_ENTRY" 
-	export IIB=$(echo $IIB_ENTRY | sed 's/.*://') 
-	export IIB_PATH=$PWD/manifests-iib-$IIB 
-	rm -rf $IIB_PATH
-	mkdir $IIB_PATH
+	IIB=$(echo $IIB_ENTRY | sed 's/.*://') 
+	IIB_PATH=$PWD/manifests-iib-$IIB 
+	#rm -rf $IIB_PATH
+	if [ ! -d $IIB_PATH ]; then
+	    mkdir $IIB_PATH
+	fi
 	cd $IIB_PATH
 
-	echo "Creating $IIB manifests"
-	oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
-
+	MIRRORED_IIB=${IIB_TARGET}iib
+	if [ ! -e imageContentSourcePolicy.yaml ]; then
+	    echo "Creating $IIB manifests"
+	    oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
+	fi
+	
 	echo "Mirroring $IIB catalog" 
-	oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${IIB_TARGET}iib:$IIB --insecure --keep-manifest-list 2>&1 | tee iib.log 
+	oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${MIRRORED_IIB} --insecure --keep-manifest-list 2>&1 | tee iib.log 
 
-	sed -i "s/name: iib$/name: iib-$IIB/" catalogSource.yaml  
-	sed -i "s@$IIB_SOURCE/rh-osbs/rh-osbs-@$IIB_TARGET@" catalogSource.yaml
-	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  catalogSource.yaml
-	oc apply -f $IIB_PATH/catalogSource.yaml  
+	CATALOG=cat.yaml
+	cat catalogSource.yaml > $CATALOG
+	sed -i "s/name: iib$/name: iib-$IIB/" $CATALOG  
+	sed -i "s@$IIB_SOURCE/rh-osbs/rh-osbs-@$IIB_TARGET@" $CATALOG
+	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
+	oc apply -f $CATALOG  
 
-	echo "Mirroring $IIB images" 
-	cp imageContentSourcePolicy.yaml imageContentSourcePolicy.yaml.orig
-	sed -i "s/name: iib-0$/name: iib-$IIB/" imageContentSourcePolicy.yaml
-
-	# The mapping is broken for some images
+	echo "Calculating $IIB images" 
+	# The default mapping is broken for some images
 	# sed -i 's@rh-osbs-red-hat@red-hat@' imageContentSourcePolicy.yaml
-	sed -i 's@rh-osbs/workload-availability@rh-osbs/red-hat-workload-availability@g' imageContentSourcePolicy.yaml
-	sed -i 's@healthcheck-rhel8-operator@healthcheck-operator@g' imageContentSourcePolicy.yaml
-	sed -i 's@node-remediation-console-rhel8@node-remediation-console@g' imageContentSourcePolicy.yaml
+	#sed -i 's@rh-osbs/workload-availability@rh-osbs/red-hat-workload-availability@g' imageContentSourcePolicy.yaml
+	#sed -i 's@healthcheck-rhel8-operator@healthcheck-operator@g' imageContentSourcePolicy.yaml
+	#sed -i 's@node-remediation-console-rhel8@node-remediation-console@g' imageContentSourcePolicy.yaml
 
 	channel=""
 	sTime=1
@@ -92,14 +105,23 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	done
 
 	echo "" > mirror.map
-	head -n 9 imageContentSourcePolicy.yaml > icsp.yaml
+	ICSP=icsp.yaml
+	head -n 9 imageContentSourcePolicy.yaml > $ICSP
+	sed -i "s/name: iib-0$/name: iib-$IIB/" $ICSP
 
 	echo "Handle the operator bundle"
 	image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
-	mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
-	    
-	echo $image=$mirrored:$IIB >> mirror.map
-	echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
+	fulltag=$(basename $image | sha256sum)
+	tag=${fulltag:0:6}
+	if [ $OCP = 12 ]; then
+	    mirrored=$MIRRORED_IIB
+	else
+	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )	    
+	fi
+
+	echo $image=$mirrored:$tag >> mirror.map
+	#echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
+	echo -e "  - source: $image\n    mirrors:\n    - $mirrored" >> $ICSP
 	
 
 #  - image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a
@@ -113,18 +135,22 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    sha=$(echo $image | sed 's/.*@/@/')
 	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
 	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
+	    tag=$IIB
+	    if [ $OCP = 12 ]; then
+		mirrored=$MIRRORED_IIB
+		fulltag=$(basename $source | sha256sum)
+		tag=${fulltag:0:6}
+	    fi
 	    
-	    echo $source$sha=$mirrored:$IIB >> mirror.map	    
-	    echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> icsp.yaml
-
-	    
+	    echo $source$sha=$mirrored:$tag >> mirror.map	    
+	    echo -e "  - mirrors:\n    - $mirrored\n    source: $source" >> $ICSP	    
 	done
 
-	cat mirror.map
+	echo "Mirroring $IIB images" 
 	oc image mirror -a $PULLSECRET -f mirror.map --continue-on-error --insecure --keep-manifest-list $MIRROR_ARGS 2>&1 | tee images.log
 
-	cat icsp.yaml
-	oc apply -f icsp.yaml
+	cat $ICSP
+	oc apply -f $ICSP
 	cd ..
 done
 
@@ -140,8 +166,7 @@ if [ $INSTALL != 0 ]; then
     echo Do install
 fi
 
-# sed -i 's@rh-osbs/workload-availability@rh-osbs/red-hat-workload-availability@g' manifests-iib-${ICSP_NR}/imageContentSourcePolicy.yaml
-# sed -i 's@red-hat-workload-availability-node-healthcheck-rhel8-operator@red-hat-workload-availability-node-healthcheck-operator@g' manifests-iib-${ICSP_NR}/imageContentSourcePolicy.yaml
-# sed -i 's@red-hat-workload-availability-node-remediation-console-rhel8@red-hat-workload-availability-node-remediation-console@g' manifests-iib-${ICSP_NR}/imageContentSourcePolicy.yaml
-
+# sed -i 's@rh-osbs/workload-availability@rh-osbs/red-hat-workload-availability@g' icsp.yaml
+# sed -i 's@red-hat-workload-availability-node-healthcheck-rhel8-operator@red-hat-workload-availability-node-healthcheck-operator@g' icsp.yaml
+# sed -i 's@red-hat-workload-availability-node-remediation-console-rhel8@red-hat-workload-availability-node-remediation-console@g' icsp.yaml
 #  - image: registry-proxy.engineering.redhat.com/rh-osbs/red-hat-workload-availability-node-healthcheck-operator-bundle@sha256:de8ba3976dbe6fb33a4a47b6cddde0d1cde0f0ee5c50e0dc52922862c70dd0d5
