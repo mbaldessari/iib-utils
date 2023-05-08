@@ -177,7 +177,19 @@ for image in $images; do
         fi
 
 done
-oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee images.log
+COUNTER=0
+set +e
+while [ ${COUNTER} -lt 3 ]; do
+        oc image mirror -a "${PULLSECRET}" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee "images${COUNTER}".log
+        ret=$?
+        COUNTER=$((COUNTER+1))
+        sleep 5
+done
+set -e
+if [ "${ret}" -ne 0 ]; then
+        echo "Uploading all images to internal registry failed at the last try as well"
+        exit 1
+fi
 
 # apply the mirror changes
 oc apply -f imagedigestmirror.yaml
