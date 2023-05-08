@@ -9,6 +9,13 @@ INDEX_IMAGES="$*"
 
 PULLSECRET=$PWD/.dockerconfigjson
 
+OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{print $2}' )
+if [ $OCP -lt 13 ]; then
+    # From ocp 4.13, the internal registry supports --keep-manifest-list
+    MIRROR_TARGET=quay.io
+fi
+
+
 if [ $MIRROR_TARGET = "internal" ]; then
     if [ $(oc whoami -t | wc -c) != 51 ]; then
 	echo "You need to 'oc login' first"
@@ -50,11 +57,6 @@ if [ $MIRROR_TARGET = "internal" ]; then
     echo "Giving permission for the cluster to access the registries"
     oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"allowedRegistries\":[ \"quay.io\", \"registry.redhat.io\", \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
     oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\", \"image-registry.openshift-image-registry.svc:5000\", \"$MIRROR_TARGET\"]}}}" --type=merge
-fi
-
-OCP=$(oc get clusterversion -o yaml | grep version: | head -n 1 | awk -F. '{print $2}' )
-if [ $OCP -gt 12 ]; then
-    # From ocp 4.13, the internal registry supports --keep-manifest-list
 fi
 
 for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do 
