@@ -16,23 +16,31 @@ if [ $OCP -lt 13 ]; then
 fi
 
 function update_mirror_files() {
-    map=$1
-    icsp=$2
-    image=$3
-    source=$4
-    mirror=$5
+    local map=$1
+    local icsp=$2
+    local image=$3
+    local source=$4
+    local mirrored=$5
 
-    echo $image=$mirrored:$tag >> mirror.map
+    local image_nohash=$(echo $image | sed -e 's/@.*//')
+    local fulltag=$(basename $image_nohash$IIB | sha256sum)
+    local tag=${fulltag:0:6}
+
+    if [ $OCP -lt 13 ]; then
+	mirrored=$MIRRORED_IIB
+    fi
+    
+    echo $image=$mirrored:$tag >> $map
     #echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
     if [ $OCP -lt 13 ]; then
-	echo -e "  - source: $image_nohash" >> $ICSP
-	echo -e "    mirrors:" >> $ICSP
-	echo -e "    - $mirrored" >> $ICSP
+	echo -e "  - source: $image_nohash" >> $icsp
+	echo -e "    mirrors:" >> $icsp
+	echo -e "    - $mirrored" >> $icsp
     else
-	echo -e "       - mirrors:" >> $ICSP
-	echo -e "            - $mirrored" >> $ICSP
-	echo -e "          source: $image_nohash" >> $ICSP
-	echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
+	echo -e "       - mirrors:" >> $icsp
+	echo -e "         - $mirrored" >> $icsp
+	echo -e "         source: $image_nohash" >> $icsp
+	echo -e "         mirrorSourcePolicy: NeverContactSource" >> $icsp
     fi
 }
 function wait_for_new_catalog() {
@@ -180,24 +188,9 @@ EOF
 	image_nohash=$(echo $image | sed -e 's/@.*//')
 	fulltag=$(basename $image | sha256sum)
 	tag=${fulltag:0:6}
-	if [ $OCP = 12 ]; then
-	    mirrored=$MIRRORED_IIB
-	else
-	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )	    
-	fi
+	mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )	    
 
-	echo $image=$mirrored:$tag >> mirror.map
-	#echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
-	if [ $OCP -lt 13 ]; then
-	    echo -e "  - source: $image_nohash" >> $ICSP
-	    echo -e "    mirrors:" >> $ICSP
-	    echo -e "    - $mirrored" >> $ICSP
-	else
-	    echo -e "       - mirrors:" >> $ICSP
-	    echo -e "            - $mirrored" >> $ICSP
-	    echo -e "          source: $image_nohash" >> $ICSP
-	    echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
-	fi
+	update_mirror_files mirror.map $ICSP $image $image_nohash $mirrored
 
 	channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
 		     -o jsonpath='{.items[0].status.defaultChannel }')
@@ -213,11 +206,6 @@ EOF
 	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
 	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
 	    tag=$IIB
-	    if [ $OCP = 12 ]; then
-		mirrored=$MIRRORED_IIB
-		fulltag=$(basename $source | sha256sum)
-		tag=${fulltag:0:6}
-	    fi
 
             # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
             # image does not exist on registry-proxy but only on registry.redhat.io
@@ -233,18 +221,7 @@ EOF
                 exit 1
             fi
 	    
-	    echo $source$sha=$mirrored:$tag >> mirror.map	    
-	    #echo -e "  - mirrors:\n    - $mirrored\n    source: $source" >> $ICSP	    
-	    if [ $OCP -lt 13 ]; then
-		echo -e "  - source: $image_nohash" >> $ICSP
-		echo -e "    mirrors:" >> $ICSP
-		echo -e "    - $mirrored" >> $ICSP
-	    else
-		echo -e "       - mirrors:" >> $ICSP
-		echo -e "            - $mirrored" >> $ICSP
-		echo -e "          source: $image_nohash" >> $ICSP
-		echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
-	    fi
+	    update_mirror_files mirror.map $ICSP $image $source $mirrored
 	done
 
 	echo "Mirroring $IIB images" 
