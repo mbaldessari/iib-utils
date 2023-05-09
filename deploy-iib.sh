@@ -128,7 +128,6 @@ if [ $MIRROR_TARGET = "internal" ]; then
 #oc -n $MIRROR_NAMESPACE policy add-role-to-group registry-viewer system:unauthenticated
 
     password=$(oc whoami -t)
-
     echo "Authenticating the cluster to the built-in registry"
     # filename must be .dockerconfigjson for use with 'oc set data'
 
@@ -202,19 +201,19 @@ EOF
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
         tag=$IIB
 
-            # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
-            # image does not exist on registry-proxy but only on registry.redhat.io
-            # contrary to what mapping.txt and imageContentSourcePolicy.yaml tell
-            # me
-            if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
-                echo "Found $source"
-            elif skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
-                echo "$source not found, defaulting to $image_nohash"
-                source=$image_nohash
-            else
-                echo "Neither ${image} nor ${source} found"
-                exit 1
-            fi
+        # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
+        # image does not exist on registry-proxy but only on registry.redhat.io
+        # contrary to what mapping.txt and imageContentSourcePolicy.yaml tell
+        # me
+        if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
+            echo "Found $source"
+        elif skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
+            echo "$source not found, defaulting to $image_nohash"
+            source=$image_nohash
+        else
+            echo "Neither ${image} nor ${source} found"
+            exit 1
+        fi
 
         update_mirror_files mirror.map $ICSP $image $source $mirrored
     done
