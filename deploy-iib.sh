@@ -133,12 +133,13 @@ if [ $MIRROR_TARGET = "internal" ]; then
     echo "Authenticating the cluster to the built-in registry"
     # filename must be .dockerconfigjson for use with 'oc set data'
 
-    if [ ! -e $PULLSECRET ]; then
-        oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
+    if [ ! -e $PULLSECRET ] || [ ! -s $PULLSECRET ]; then
+        echo "Extracting pull secrets from cluster"
+        oc extract secret/pull-secret -n openshift-config --to=- > $PULLSECRET
     fi
 
     if ! grep -q $MIRROR_TARGET $PULLSECRET; then
-        jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+        jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64 -w0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
         oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
     fi
 
