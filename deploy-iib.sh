@@ -135,14 +135,8 @@ if [ $MIRROR_TARGET = "internal" ]; then
         oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
     fi
 
-    set +e
-    grep -q $MIRROR_TARGET $PULLSECRET
-    rc=$?
-    set -e
-
-    if [ $rc = 1 ]; then
+    if ! grep -q $MIRROR_TARGET $PULLSECRET; then
         jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
-        jq ".auths += {\"quay.io\": {\"auth\": \"$(echo -n "abeekhof+blueprints:XTYZQFWG21AP0BYVCX7RV5HZLZM87SRGB9F5PPYP6SCRZ4BL75GWW7O9P4C01QYL" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
         oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
     fi
 
