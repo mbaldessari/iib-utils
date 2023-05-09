@@ -15,7 +15,26 @@ if [ $OCP -lt 13 ]; then
     MIRROR_TARGET=quay.io
 fi
 
+function update_mirror_files() {
+    map=$1
+    icsp=$2
+    image=$3
+    source=$4
+    mirror=$5
 
+    echo $image=$mirrored:$tag >> mirror.map
+    #echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
+    if [ $OCP -lt 13 ]; then
+	echo -e "  - source: $image_nohash" >> $ICSP
+	echo -e "    mirrors:" >> $ICSP
+	echo -e "    - $mirrored" >> $ICSP
+    else
+	echo -e "       - mirrors:" >> $ICSP
+	echo -e "            - $mirrored" >> $ICSP
+	echo -e "          source: $image_nohash" >> $ICSP
+	echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
+    fi
+}
 function wait_for_new_catalog() {
         local operator=$1
         local iib=$2
@@ -47,7 +66,7 @@ function install_new_iib() {
 	if [ ! -d $IIB_PATH ]; then
 	    mkdir $IIB_PATH
 	fi
-	cd $IIB_PATH
+        pushd "${IIB_PATH}"
 
 	MIRRORED_IIB=${MIRROR_TARGET}/$MIRROR_NAMESPACE/iib
 	if [ ! -e imageContentSourcePolicy.yaml ]; then
@@ -155,6 +174,7 @@ spec:
     imageDigestMirrors:
 EOF
 	fi
+
 	echo "Handle the operator bundle"
 	image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
 	image_nohash=$(echo $image | sed -e 's/@.*//')
@@ -232,7 +252,7 @@ EOF
 
 	cat $ICSP
 	oc apply -f $ICSP
-	cd ..
+	popd
 done
 
 wait_for_mcp_completion
