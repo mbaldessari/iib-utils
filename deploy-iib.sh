@@ -16,6 +16,74 @@ if [ $OCP -lt 13 ]; then
 fi
 
 
+function wait_for_new_catalog() {
+        local operator=$1
+        local iib=$2
+        sTime=1
+        while ! oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-${iib}" --field-selector "metadata.name=${operator}" \
+                -o jsonpath='{.items[0].status.defaultChannel}'; do
+                echo "Waiting for the package manifest to appear"
+                sleep $sTime
+                sTime=20
+        done
+}
+
+function wait_for_mcp_completion() {
+        # FIXME(bandini): arbitrary wait for MCP to start applying
+        sleep 5
+        echo "Waiting for the mirror to start applying"
+        while ! oc get mcp | grep -e 'worker.*False.*True.*False'; do sleep 10; done
+        echo "Waiting for the mirror to finish applying"
+        while ! oc get mcp | grep 'worker.*True.*False.*False'; do sleep 10; done	
+}
+
+function install_new_iib() {
+        local COUNTER=0
+
+	echo "Processing $IIB_ENTRY" 
+	IIB=$(echo $* | sed 's/.*://') 
+	IIB_PATH=$PWD/manifests-iib-$IIB 
+	#rm -rf $IIB_PATH
+	if [ ! -d $IIB_PATH ]; then
+	    mkdir $IIB_PATH
+	fi
+	cd $IIB_PATH
+
+	MIRRORED_IIB=${MIRROR_TARGET}/$MIRROR_NAMESPACE/iib
+	if [ ! -e imageContentSourcePolicy.yaml ]; then
+	    echo "Creating $IIB manifests"
+	    oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
+	fi	
+
+        echo "Mirroring $IIB catalog"
+        # FIXME(bandini): this sometimes fails and needs a retry mechanism
+        rm -f iib.log
+        set +e
+        while [ ${COUNTER} -lt 3 ]; do
+	  oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${MIRRORED_IIB} --insecure --keep-manifest-list 2>&1 | tee -a iib.log 
+          ret=$?
+          COUNTER=$((COUNTER+1))
+          sleep 1
+        done
+        set -e
+        if [ "${ret}" -ne 0 ]; then
+                echo "Uploading IIB to internal registry failed at last try as well"
+                exit 1
+        fi
+
+	echo "Mirroring $IIB catalog" 
+
+	CATALOG=cat.yaml
+	cat catalogSource.yaml > $CATALOG
+	sed -i "s/name: iib$/name: iib-$IIB/" $CATALOG  
+	sed -i "s@image:.*@image: ${MIRRORED_IIB}:$IIB@" $CATALOG
+	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
+	oc apply -f $CATALOG  
+
+        wait_for_new_catalog openshift-gitops-operator "${IIB}"
+}
+
+
 if [ $MIRROR_TARGET = "internal" ]; then
     if [ $(oc whoami -t | wc -c) != 51 ]; then
 	echo "You need to 'oc login' first"
@@ -60,31 +128,8 @@ if [ $MIRROR_TARGET = "internal" ]; then
 fi
 
 for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do 
-	echo "Processing $IIB_ENTRY" 
-	IIB=$(echo $IIB_ENTRY | sed 's/.*://') 
-	IIB_PATH=$PWD/manifests-iib-$IIB 
-	#rm -rf $IIB_PATH
-	if [ ! -d $IIB_PATH ]; then
-	    mkdir $IIB_PATH
-	fi
-	cd $IIB_PATH
-
-	MIRRORED_IIB=${MIRROR_TARGET}/$MIRROR_NAMESPACE/iib
-	if [ ! -e imageContentSourcePolicy.yaml ]; then
-	    echo "Creating $IIB manifests"
-	    oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
-	fi
-	
-	echo "Mirroring $IIB catalog" 
-	oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${MIRRORED_IIB} --insecure --keep-manifest-list 2>&1 | tee iib.log 
-
-	CATALOG=cat.yaml
-	cat catalogSource.yaml > $CATALOG
-	sed -i "s/name: iib$/name: iib-$IIB/" $CATALOG  
-	sed -i "s@image:.*@image: ${MIRRORED_IIB}:$IIB@" $CATALOG
-	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
-	oc apply -f $CATALOG  
-
+	install_new_iib $IIB_ENTRY
+    
 	echo "Calculating $IIB images" 
 	# The default mapping is broken for some images
 	# sed -i 's@rh-osbs-red-hat@red-hat@' imageContentSourcePolicy.yaml
@@ -92,24 +137,27 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	#sed -i 's@healthcheck-rhel8-operator@healthcheck-operator@g' imageContentSourcePolicy.yaml
 	#sed -i 's@node-remediation-console-rhel8@node-remediation-console@g' imageContentSourcePolicy.yaml
 
-	channel=""
-	sTime=1
-	while [ "x$channel" = x ]; do
-	    echo "Waiting for the package manifest to appear"
-	    sleep $sTime
-	    set +e
-	    channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath='{.items[0].status.defaultChannel }')
-	    set -e
-	    sTime=20
-	done
-
 	echo "" > mirror.map
-	ICSP=icsp.yaml
-	head -n 9 imageContentSourcePolicy.yaml > $ICSP
-	sed -i "s/name: iib-0$/name: iib-$IIB/" $ICSP
-
+	if [ $OCP -lt 13 ]; then
+	    ICSP=icsp.yaml
+	    head -n 9 imageContentSourcePolicy.yaml > $ICSP
+	    sed -i "s/name: iib-0$/name: iib-$IIB/" $ICSP
+	else
+	    ICSP=imagedigestmirror.yaml
+	    cat > $ICSP <<EOF
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+    labels:
+        operators.openshift.org/catalog: "true"
+    name: iib-$IIB
+spec:
+    imageDigestMirrors:
+EOF
+	fi
 	echo "Handle the operator bundle"
 	image=$(grep -e "^registry-proxy.*bundle" mapping.txt | sed 's/=.*//')
+	image_nohash=$(echo $image | sed -e 's/@.*//')
 	fulltag=$(basename $image | sha256sum)
 	tag=${fulltag:0:6}
 	if [ $OCP = 12 ]; then
@@ -120,18 +168,28 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 
 	echo $image=$mirrored:$tag >> mirror.map
 	#echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
-	echo -e "  - source: $(echo $image | sed -e 's/@.*//')\n    mirrors:\n    - $mirrored" >> $ICSP
-	
+	if [ $OCP -lt 13 ]; then
+	    echo -e "  - source: $image_nohash" >> $ICSP
+	    echo -e "    mirrors:" >> $ICSP
+	    echo -e "    - $mirrored" >> $ICSP
+	else
+	    echo -e "       - mirrors:" >> $ICSP
+	    echo -e "            - $mirrored" >> $ICSP
+	    echo -e "          source: $image_nohash" >> $ICSP
+	    echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
+	fi
 
-#  - image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a
-#+ oc image mirror registry-proxy.engineering.redhat.com/rh-osbs/rh-osbs-openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a=default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/rh-osbs-openshift-gitops-1-gitops-operator-bundle:489388 --insecure
-	
-	images=$(oc get packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | jq -r '. | join(" ")')
+	channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
+		     -o jsonpath='{.items[0].status.defaultChannel }')
+	images=$(oc get packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
+		    -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | jq -r '. | join(" ")')
+
 	for image in $images; do
 	    # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
 	    # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator
 	    # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
 	    sha=$(echo $image | sed 's/.*@/@/')
+	    image_nohash=$(echo $image | sed -e 's/@.*//')
 	    source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
 	    mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
 	    tag=$IIB
@@ -140,10 +198,33 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 		fulltag=$(basename $source | sha256sum)
 		tag=${fulltag:0:6}
 	    fi
+
+            # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
+            # image does not exist on registry-proxy but only on registry.redhat.io
+            # contrary to what mapping.txt and imageContentSourcePolicy.yaml tell
+            # me
+            if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
+                echo "Found $source"
+            elif skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
+                echo "$source not found, defaulting to $image_nohash"
+		source=$image_nohash
+	    else
+                echo "Neither ${image} nor ${source} found"
+                exit 1
+            fi
 	    
 	    echo $source$sha=$mirrored:$tag >> mirror.map	    
 	    #echo -e "  - mirrors:\n    - $mirrored\n    source: $source" >> $ICSP	    
-	    echo -e "  - source: $(echo $image | sed -e 's/@.*//')\n    mirrors:\n    - $mirrored" >> $ICSP
+	    if [ $OCP -lt 13 ]; then
+		echo -e "  - source: $image_nohash" >> $ICSP
+		echo -e "    mirrors:" >> $ICSP
+		echo -e "    - $mirrored" >> $ICSP
+	    else
+		echo -e "       - mirrors:" >> $ICSP
+		echo -e "            - $mirrored" >> $ICSP
+		echo -e "          source: $image_nohash" >> $ICSP
+		echo -e "          mirrorSourcePolicy: NeverContactSource" >> $ICSP
+	    fi
 	done
 
 	echo "Mirroring $IIB images" 
@@ -154,13 +235,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	cd ..
 done
 
-echo Waiting for the mirror to start applying
-oc get mcp
-while [ "x$(oc get mcp | grep 'worker.*False.*True.*False')" = x ]; do sleep 10; done     
-echo Waiting for the mirror to finish applying
-oc get mcp
-while [ "x$(oc get mcp | grep 'worker.*True.*False.*False')" = x ]; do sleep 10; done     
-oc get mcp
+wait_for_mcp_completion
 
 if [ $INSTALL != 0 ]; then
     echo Do install
