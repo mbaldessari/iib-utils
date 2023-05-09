@@ -81,7 +81,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	CATALOG=cat.yaml
 	cat catalogSource.yaml > $CATALOG
 	sed -i "s/name: iib$/name: iib-$IIB/" $CATALOG  
-	sed -i "s@image:.*@image: $MIRRORED_IIB@" $CATALOG
+	sed -i "s@image:.*@image: ${MIRRORED_IIB}:$IIB@" $CATALOG
 	sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
 	oc apply -f $CATALOG  
 
@@ -120,7 +120,7 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 
 	echo $image=$mirrored:$tag >> mirror.map
 	#echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
-	echo -e "  - source: $image\n    mirrors:\n    - $mirrored" >> $ICSP
+	echo -e "  - source: $(echo $image | sed -e 's/@.*//')\n    mirrors:\n    - $mirrored" >> $ICSP
 	
 
 #  - image: registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:b62de4ef5208e2cc358649bd59e0b9f750f95d91184725135b7705f9f60cc70a
@@ -142,7 +142,8 @@ for IIB_ENTRY in $(echo $INDEX_IMAGES | tr ',' '\n'); do
 	    fi
 	    
 	    echo $source$sha=$mirrored:$tag >> mirror.map	    
-	    echo -e "  - mirrors:\n    - $mirrored\n    source: $source" >> $ICSP	    
+	    #echo -e "  - mirrors:\n    - $mirrored\n    source: $source" >> $ICSP	    
+	    echo -e "  - source: $(echo $image | sed -e 's/@.*//')\n    mirrors:\n    - $mirrored" >> $ICSP
 	done
 
 	echo "Mirroring $IIB images" 
