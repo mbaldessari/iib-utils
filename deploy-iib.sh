@@ -27,7 +27,7 @@ function update_mirror_files() {
     local tag=${fulltag:0:6}
 
     if [ $OCP -lt 13 ]; then
-    mirrored=$MIRRORED_IIB
+        mirrored=$MIRRORED_IIB
     fi
 
     echo $image=$mirrored:$tag >> $map
@@ -43,26 +43,27 @@ function update_mirror_files() {
         echo -e "         mirrorSourcePolicy: NeverContactSource" >> $icsp
     fi
 }
-function wait_for_new_catalog() {
-        local operator=$1
-        local iib=$2
-        sTime=1
-        while ! oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-${iib}" --field-selector "metadata.name=${operator}" \
-                -o jsonpath='{.items[0].status.defaultChannel}'; do
-                echo "Waiting for the package manifest to appear"
-                sleep $sTime
-                sTime=20
-        done
-}
 
-function wait_for_mcp_completion() {
+function wait_for_new_catalog() {
+    local operator=$1
+    local iib=$2
+    sTime=1
+    while ! oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-${iib}" --field-selector "metadata.name=${operator}" \
+        -o jsonpath='{.items[0].status.defaultChannel}'; do
+            echo "Waiting for the package manifest to appear"
+            sleep $sTime
+            sTime=20
+        done
+    }
+
+    function wait_for_mcp_completion() {
         # FIXME(bandini): arbitrary wait for MCP to start applying
         sleep 5
         echo "Waiting for the mirror to start applying"
         while ! oc get mcp | grep -e 'worker.*False.*True.*False'; do sleep 10; done
         echo "Waiting for the mirror to finish applying"
         while ! oc get mcp | grep 'worker.*True.*False.*False'; do sleep 10; done
-}
+    }
 
 function install_new_iib() {
     local COUNTER=0
