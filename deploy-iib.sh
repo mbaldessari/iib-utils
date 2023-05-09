@@ -195,7 +195,6 @@ EOF
         # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
         # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator
         # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
-        sha=$(echo $image | sed 's/.*@/@/')
         image_nohash=$(echo $image | sed -e 's/@.*//')
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
