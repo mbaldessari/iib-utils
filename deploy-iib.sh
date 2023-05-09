@@ -33,14 +33,14 @@ function update_mirror_files() {
     echo $image=$mirrored:$tag >> $map
     #echo -e "  - mirrors:\n    - $mirrored\n    source: $image" >> $ICSP
     if [ $OCP -lt 13 ]; then
-    echo -e "  - source: $image_nohash" >> $icsp
-    echo -e "    mirrors:" >> $icsp
-    echo -e "    - $mirrored" >> $icsp
+        echo -e "  - source: $image_nohash" >> $icsp
+        echo -e "    mirrors:" >> $icsp
+        echo -e "    - $mirrored" >> $icsp
     else
-    echo -e "       - mirrors:" >> $icsp
-    echo -e "         - $mirrored" >> $icsp
-    echo -e "         source: $image_nohash" >> $icsp
-    echo -e "         mirrorSourcePolicy: NeverContactSource" >> $icsp
+        echo -e "       - mirrors:" >> $icsp
+        echo -e "         - $mirrored" >> $icsp
+        echo -e "         source: $image_nohash" >> $icsp
+        echo -e "         mirrorSourcePolicy: NeverContactSource" >> $icsp
     fi
 }
 function wait_for_new_catalog() {
@@ -65,7 +65,7 @@ function wait_for_mcp_completion() {
 }
 
 function install_new_iib() {
-        local COUNTER=0
+    local COUNTER=0
 
     echo "Processing $IIB_ENTRY"
     IIB=$(echo $* | sed 's/.*://')
@@ -74,7 +74,7 @@ function install_new_iib() {
     if [ ! -d $IIB_PATH ]; then
         mkdir $IIB_PATH
     fi
-        pushd "${IIB_PATH}"
+    pushd "${IIB_PATH}"
 
     MIRRORED_IIB=${MIRROR_TARGET}/$MIRROR_NAMESPACE/iib
     if [ ! -e imageContentSourcePolicy.yaml ]; then
@@ -82,21 +82,21 @@ function install_new_iib() {
         oc adm catalog mirror --insecure --manifests-only --to-manifests=. $IIB_SOURCE/rh-osbs/iib:$IIB $IIB_SOURCE/rh-osbs 2>&1 | tee catalog.log
     fi
 
-        echo "Mirroring $IIB catalog"
-        # FIXME(bandini): this sometimes fails and needs a retry mechanism
-        rm -f iib.log
-        set +e
-        while [ ${COUNTER} -lt 3 ]; do
-      oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${MIRRORED_IIB} --insecure --keep-manifest-list 2>&1 | tee -a iib.log
-          ret=$?
-          COUNTER=$((COUNTER+1))
-          sleep 1
-        done
-        set -e
-        if [ "${ret}" -ne 0 ]; then
-                echo "Uploading IIB to internal registry failed at last try as well"
-                exit 1
-        fi
+    echo "Mirroring $IIB catalog"
+    # FIXME(bandini): this sometimes fails and needs a retry mechanism
+    rm -f iib.log
+    set +e
+    while [ ${COUNTER} -lt 3 ]; do
+        oc image mirror -a $PULLSECRET $IIB_SOURCE/rh-osbs/iib:$IIB=${MIRRORED_IIB} --insecure --keep-manifest-list 2>&1 | tee -a iib.log
+        ret=$?
+        COUNTER=$((COUNTER+1))
+        sleep 1
+    done
+    set -e
+    if [ "${ret}" -ne 0 ]; then
+        echo "Uploading IIB to internal registry failed at last try as well"
+        exit 1
+    fi
 
     echo "Mirroring $IIB catalog"
 
@@ -107,14 +107,14 @@ function install_new_iib() {
     sed -i "s/grpc/grpc\n  displayName: IIB $IIB/"  $CATALOG
     oc apply -f $CATALOG
 
-        wait_for_new_catalog openshift-gitops-operator "${IIB}"
+    wait_for_new_catalog openshift-gitops-operator "${IIB}"
 }
 
 
 if [ $MIRROR_TARGET = "internal" ]; then
     if [ $(oc whoami -t | wc -c) != 51 ]; then
-    echo "You need to 'oc login' first"
-    false
+        echo "You need to 'oc login' first"
+        false
     fi
 
     echo "Enabling the built-in registry"
@@ -132,7 +132,7 @@ if [ $MIRROR_TARGET = "internal" ]; then
     # filename must be .dockerconfigjson for use with 'oc set data'
 
     if [ ! -e $PULLSECRET ]; then
-    oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
+        oc extract secret/pull-secret -n openshift-config  --to=- > $PULLSECRET
     fi
 
     set +e
@@ -141,9 +141,9 @@ if [ $MIRROR_TARGET = "internal" ]; then
     set -e
 
     if [ $rc = 1 ]; then
-    jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
-    jq ".auths += {\"quay.io\": {\"auth\": \"$(echo -n "abeekhof+blueprints:XTYZQFWG21AP0BYVCX7RV5HZLZM87SRGB9F5PPYP6SCRZ4BL75GWW7O9P4C01QYL" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
-    oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
+        jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+        jq ".auths += {\"quay.io\": {\"auth\": \"$(echo -n "abeekhof+blueprints:XTYZQFWG21AP0BYVCX7RV5HZLZM87SRGB9F5PPYP6SCRZ4BL75GWW7O9P4C01QYL" | base64  -w 0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+        oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
     fi
 
     echo "Logging into the built-in registry"
@@ -215,8 +215,8 @@ EOF
                 echo "Found $source"
             elif skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
                 echo "$source not found, defaulting to $image_nohash"
-        source=$image_nohash
-        else
+                source=$image_nohash
+            else
                 echo "Neither ${image} nor ${source} found"
                 exit 1
             fi
