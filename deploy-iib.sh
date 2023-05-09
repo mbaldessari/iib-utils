@@ -139,7 +139,9 @@ if [ $MIRROR_TARGET = "internal" ]; then
     fi
 
     if ! grep -q $MIRROR_TARGET $PULLSECRET; then
-        jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64 -w0)\",\"email\": \"noemail@localhost\"}}" < $PULLSECRET > $PULLSECRET
+        jq ".auths += {\"$MIRROR_TARGET\": {\"auth\": \"$(echo -n "kubeadmin:$password" | base64 -w0)\",\"email\": \"noemail@localhost\"}}" < "${PULLSECRET}" > "${PULLSECRET}.tmpfile"
+        mv "${PULLSECRET}.tmpfile" "${PULLSECRET}"
+        rm -f "${PULLSECRET}.tmpfile"
         oc set data secret/pull-secret -n openshift-config --from-file=$PULLSECRET
     fi
 
