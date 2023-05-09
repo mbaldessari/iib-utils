@@ -113,9 +113,11 @@ function install_new_iib() {
 
 
 if [ $MIRROR_TARGET = "internal" ]; then
-    if [ $(oc whoami -t | wc -c) != 51 ]; then
+    # FIXME(bandini): we need to find a way to login in the internal registry with an alternate
+    #                 user that does not require `oc login`
+    if ! oc whoami -t; then
         echo "You need to 'oc login' first"
-        false
+        exit 1
     fi
 
     echo "Enabling the built-in registry"
