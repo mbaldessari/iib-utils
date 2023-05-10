@@ -124,3 +124,18 @@
   ansible.builtin.template:
     src: ./templates/imageDigestMirror.yaml.j2
     dest: "{{ iib_local_folder }}/imageDigestMirror.yaml"
+
+- name: Template out mirror.map
+  ansible.builtin.template:
+    src: ./templates/mirror.map.j2
+    dest: "{{ iib_local_folder }}/mirror.map"
+
+- name: Mirror all the needed images
+  ansible.builtin.shell:
+    oc image mirror -a "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson" -f mirror.map --continue-on-error --insecure --keep-manifest-list 2>&1 | tee -a image-mirror.log
+  args:
+    chdir: "{{ iib_local_folder }}"
+  retries: 5
+  delay: 2
+  register: oc_mirror
+  until: oc_mirror is not failed
