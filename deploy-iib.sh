@@ -15,10 +15,11 @@ if [ $OCP -lt 13 ]; then
     MIRROR_TARGET=quay.io
 fi
 
+
 function update_mirror_files() {
-    local map=$1
-    local icsp=$2
-    local image=$3
+    local map=$1 # mapping files used by oc image mirror
+    local icsp=$2 # mirroring file applied to the OCP cluster
+    local image=$3 # 
     local source=$4
     local mirrored=$5
 
@@ -191,7 +192,7 @@ EOF
 
     update_mirror_files mirror.map $ICSP $image $image_nohash $mirrored
 
-    channel=$(oc get  -n ${MIRROR_NAMESPACE} packagemanifests  -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
+    channel=$(oc get -n ${MIRROR_NAMESPACE} packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
              -o jsonpath='{.items[0].status.defaultChannel }')
     images=$(oc get packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
             -o jsonpath="{.items[0].status.channels[?(@.name==\"$channel\")].currentCSVDesc.relatedImages}" | jq -r '. | join(" ")')
@@ -202,8 +203,7 @@ EOF
         # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
         image_nohash=$(echo $image | sed -e 's/@.*//')
         source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
-        mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source )
-        tag=$IIB
+        mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
 
         # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
         # image does not exist on registry-proxy but only on registry.redhat.io
