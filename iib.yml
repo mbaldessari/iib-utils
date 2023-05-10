@@ -1,0 +1,42 @@
+---
+- hosts: localhost
+  gather_facts: false
+  vars_files:
+    ./vars/defaults.yml
+  tasks:
+  - name: Check that KUBEADMINAPI, KUBEADMINPASS and IIB env variables are set
+    ansible.builtin.fail:
+      msg: "KUBEADMINAPI: '{{ kubeadminapi }}', KUBEADMINPASS: '{{ kubeadminpass }}' - IIB: '{{ iib }}'. All need to be set"
+    failed_when: >
+      (kubeadminapi is not defined or kubeadminapi | length == 0) or
+      (kubeadminpass is not defined or kubeadminpass | length == 0) or
+      (iib is not defined or iib | length == 0)
+
+  - name: Login via kubeadmin
+    ansible.builtin.shell: |
+      oc login -u kubeadmin -p "{{ kubeadminpass }}" "{{ kubeadminapi }}"
+
+  - name: Get kubeadmin token
+    ansible.builtin.shell: |
+      oc whoami -t
+    register: oc_whoami_raw
+
+  - name: Set kubeadmin token
+    ansible.builtin.set_fact:
+      kubeadmin_token: "{{ oc_whoami_raw.stdout }}"
+
+  - name: Get cluster version
+    # E.g. 4.13.0-rc.6 or 4.12.16
+    ansible.builtin.shell: |
+      oc get openshiftcontrollermanager/cluster -o yaml -o jsonpath='{.status.version}'
+    register: oc_version_raw
+
+  - name: Is OCP pre OCP 4.13? (aka registry supports v2 manifests)
+    ansible.builtin.set_fact:
+      registry_supports_v2: "{{ oc_version_raw.stdout is version('4.13', '>=') }}"
+
+  - name: Set up internal registry
+    ansible.builtin.include_tasks: setup-internal-registry.yml
+    when: registry_supports_v2
+      
+

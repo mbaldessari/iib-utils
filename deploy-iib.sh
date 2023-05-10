@@ -21,9 +21,8 @@ fi
 function update_mirror_files() {
     local map=$1 # mapping files used by oc image mirror
     local icsp=$2 # mirroring file applied to the OCP cluster
-    local image=$3 # 
-    local source=$4
-    local mirrored=$5
+    local image=$3 # image that we know exists
+    local mirrored=$4
 
     local image_nohash=$(echo $image | sed -e 's/@.*//')
     local fulltag=$(basename $image_nohash$IIB | sha256sum)
@@ -192,7 +191,7 @@ EOF
     tag=${fulltag:0:6}
     mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $image | sed -e 's/@.*//' )
 
-    update_mirror_files mirror.map $ICSP $image $image_nohash $mirrored
+    update_mirror_files mirror.map $ICSP $image $mirrored
 
     channel=$(oc get -n ${MIRROR_NAMESPACE} packagemanifests -l "catalog=iib-$IIB" --field-selector 'metadata.name=openshift-gitops-operator' \
              -o jsonpath='{.items[0].status.defaultChannel }')
@@ -203,8 +202,7 @@ EOF
         # image:    registry.redhat.io/openshift-gitops-1/gitops-rhel8-operator@sha256:b46742d61aa8444b0134959c8edbc96cc11c71bf04c6744a30b2d7e1ebe888a7
         # source:   registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8-operator
         # mirrored: default-route-openshift-image-registry.apps.beekhof412.blueprints.rhecoeng.com/openshift-marketplace/openshift-gitops-1-gitops-rhel8-operator
-        image_nohash=$(echo $image | sed -e 's/@.*//')
-        source=$(grep $image mapping.txt | sed -e 's/.*=//' -e 's/:.*//')
+        source=$(grep $image mapping.txt | sed -e 's/.*=//')
         mirrored=$MIRROR_TARGET/$MIRROR_NAMESPACE/$(basename $source)
 
         # This monstrosity if because *sometimes* (e.g. ose-haproxy-router) the
@@ -213,15 +211,16 @@ EOF
         # me
         if skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${source}" &> /tmp/source.log; then
             echo "Found $source"
+            found=$source
         elif skopeo inspect --authfile "${PULLSECRET}" --no-tags "docker://${image}" &> /tmp/image.log; then
-            echo "$source not found, defaulting to $image_nohash"
-            source=$image_nohash
+            echo "$source not found, defaulting to $image"
+            found=$image
         else
             echo "Neither ${image} nor ${source} found"
             exit 1
         fi
 
-        update_mirror_files mirror.map $ICSP $image $source $mirrored
+        update_mirror_files mirror.map $ICSP $found $mirrored
     done
 
     echo "Mirroring $IIB images"

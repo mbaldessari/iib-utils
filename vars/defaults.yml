@@ -1,0 +1,6 @@
+rh_internal_registry: registry-proxy.engineering.redhat.com
+kubeadminpass: "{{ lookup('env', 'KUBEADMINPASS') }}"
+# E.g. https://api.mcg-hub.blueprints.rhecoeng.com:6443
+kubeadminapi: "{{ lookup('env', 'KUBEADMINAPI') }}"
+iib: "{{ lookup('env', 'IIB') }}"
+internal_registry_ns: openshift-marketplace
