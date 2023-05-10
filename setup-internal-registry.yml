@@ -57,17 +57,17 @@
 
 - name: Get a tempfile for the pull secrets
   ansible.builtin.tempfile:
-    state: file
-  register: pull_secrets_tempfile
+    state: directory
+  register: pull_secrets_tempfolder
 
 - name: Store pull secrets in tempfile
   ansible.builtin.copy:
-    dest: "{{ pull_secrets_tempfile.path }}"
+    dest: "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
     content: "{{ pull_secrets | to_nice_json }}"
 
 - name: Update pull-secret in the cluster
   ansible.builtin.shell: |
-    oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfile.path }}"
+    oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
 
 - name: Login the internal registry with podman
   ansible.builtin.shell:
@@ -75,6 +75,5 @@
 
 - name: Remove tempfile
   ansible.builtin.file:
-    path: "{{ pull_secrets_tempfile.path }}"
+    path: "{{ pull_secrets_tempfolder.path }}"
     state: absent
-
