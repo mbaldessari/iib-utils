@@ -26,3 +26,9 @@
 
   - name: Install new IIB in cluster
     ansible.builtin.include_tasks: install-iib-in-cluster.yml
+
+  - name: Remove pullsecrets tempfolder
+    ansible.builtin.file:
+      path: "{{ pull_secrets_tempfolder.path }}"
+      state: absent
+

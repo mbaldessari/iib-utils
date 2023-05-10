@@ -11,3 +11,5 @@ internal_registry_email: noemail@localhost
 
 iib: "{{ lookup('env', 'IIB') }}"
 iib_local_folder: "/tmp/manifest-{{ iib }}"
+
+operator: openshift-gitops-operator

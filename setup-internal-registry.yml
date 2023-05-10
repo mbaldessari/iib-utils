@@ -73,12 +73,6 @@
   ansible.builtin.shell:
     podman login --tls-verify=false --username unused --password "{{ kubeadmin_token }}" "https://{{ registry_route }}"
 
-- name: Remove tempfile
-  ansible.builtin.file:
-    path: "{{ pull_secrets_tempfolder.path }}"
-    state: absent
-
 - name: Set Mirror URL fact for internal mirror
   ansible.builtin.set_fact:
-    mirror_target: "{{ registry_route }}/{{ internal_registry_ns }}/iib"
-
+    mirror_iib: "{{ registry_route }}/{{ internal_registry_ns }}/iib"
