@@ -1,0 +1,16 @@
+- name: Remove manifest folder "{{ iib_local_folder }}"
+  ansible.builtin.file:
+    path: "{{ iib_local_folder }}"
+    state: absent
+
+- name: Create manifest folder "{{ iib_local_folder }}"
+  ansible.builtin.file:
+    path: "{{ iib_local_folder }}"
+    state: directory
+
+- name: Mirror catalog manifests only to "{{ iib_local_folder }}"
+  ansible.builtin.shell: >
+    oc adm catalog mirror --insecure --manifests-only --to-manifests=. 
+      "{{ rh_internal_registry }}/rh-osbs/iib:{{ iib }}" "{{ rh_internal_registry }}/rh-osbs" 2>&1 | tee catalog.log
+  args:
+    chdir: "{{ iib_local_folder }}"
