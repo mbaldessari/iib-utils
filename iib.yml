@@ -34,5 +34,3 @@
     ansible.builtin.file:
       path: "{{ pull_secrets_tempfolder.path }}"
       state: absent
-
-

@@ -117,7 +117,7 @@
 #   "source_nosha": "registry.redhat.io/rhel8/redis-6"
 # }
 - name: Print dict with full images
-  debug:
+  ansible.builtin.debug:
     msg: "{{ image_urls }}"
 
 - name: Template out imageDigestMirror.yaml
@@ -139,3 +139,61 @@
   delay: 2
   register: oc_mirror
   until: oc_mirror is not failed
+
+- name: Fetch MCP observedGeneration worker
+  ansible.builtin.shell:
+    oc get mcp/worker -o jsonpath='{.status.observedGeneration}'
+  register: worker_observed_generation_raw
+
+- name: Fetch MCP readyMachineCount worker
+  ansible.builtin.shell:
+    oc get mcp/worker -o jsonpath='{.status.readyMachineCount}'
+  register: worker_ready_machinecount_raw
+
+- name: Fetch MCP observedGeneration master
+  ansible.builtin.shell:
+    oc get mcp/master -o jsonpath='{.status.observedGeneration}'
+  register: master_observed_generation_raw
+
+- name: Fetch MCP readyMachineCount master
+  ansible.builtin.shell:
+    oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
+  register: master_ready_machinecount_raw
+
+- name: Apply imageDigestMirror
+  ansible.builtin.shell:
+    oc apply -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
+
+# FIXME(bandini): this is still not solid
+# We wait for a new observedGeneration to happen (i.e. we wait here until MCP has at least started)
+- name: Wait for MCP new observedGeneration worker
+  ansible.builtin.shell:
+    oc get mcp/worker -o jsonpath='{.status.observedGeneration}'
+  register: worker_current_observed_generation_raw
+  retries: 30
+  delay: 20
+  until: worker_current_observed_generation_raw.stdout != worker_observed_generation_raw.stdout
+
+- name: Wait for MCP new observedGeneration master
+  ansible.builtin.shell:
+    oc get mcp/master -o jsonpath='{.status.observedGeneration}'
+  register: master_current_observed_generation_raw
+  retries: 30
+  delay: 20
+  until: master_current_observed_generation_raw.stdout != master_observed_generation_raw.stdout
+
+- name: Wait for MCP readyMachineCount to be the same as before applying the digest (worker)
+  ansible.builtin.shell:
+    oc get mcp/worker -o jsonpath='{.status.readyMachineCount}'
+  register: worker_current_ready_machinecount_raw
+  retries: 30
+  delay: 10
+  until: worker_current_ready_machinecount_raw.stdout == worker_ready_machinecount_raw.stdout
+
+- name: Wait for MCP readyMachineCount to be the same as before applying the digest (master)
+  ansible.builtin.shell:
+    oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
+  register: master_current_ready_machinecount_raw
+  retries: 30
+  delay: 10
+  until: master_current_ready_machinecount_raw.stdout == master_ready_machinecount_raw.stdout
