@@ -73,6 +73,10 @@
   ansible.builtin.shell:
     podman login --tls-verify=false --username unused --password "{{ kubeadmin_token }}" "https://{{ registry_route }}"
 
-- name: Set Mirror URL fact for internal mirror
+- name: Set Mirror URL fact for internal mirror IIB
   ansible.builtin.set_fact:
     mirror_iib: "{{ registry_route }}/{{ internal_registry_ns }}/iib"
+
+- name: Set Mirror URL fact for internal mirror
+  ansible.builtin.set_fact:
+    mirror_dest: "{{ registry_route }}/{{ internal_registry_ns }}/"

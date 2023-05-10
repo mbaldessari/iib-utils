@@ -27,8 +27,12 @@
   - name: Install new IIB in cluster
     ansible.builtin.include_tasks: install-iib-in-cluster.yml
 
+  - name: Mirror all related images
+    ansible.builtin.include_tasks: mirror-related-images.yml
+
   - name: Remove pullsecrets tempfolder
     ansible.builtin.file:
       path: "{{ pull_secrets_tempfolder.path }}"
       state: absent
+
 
