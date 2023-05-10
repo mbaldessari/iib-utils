@@ -4,26 +4,11 @@
   vars_files:
     ./vars/defaults.yml
   tasks:
-  - name: Check that KUBEADMINAPI, KUBEADMINPASS and IIB env variables are set
+  - name: Check that IIB env variable is set
     ansible.builtin.fail:
-      msg: "KUBEADMINAPI: '{{ kubeadminapi }}', KUBEADMINPASS: '{{ kubeadminpass }}' - IIB: '{{ iib }}'. All need to be set"
-    failed_when: >
-      (kubeadminapi is not defined or kubeadminapi | length == 0) or
-      (kubeadminpass is not defined or kubeadminpass | length == 0) or
+      msg: "IIB: '{{ iib }}' is not set"
+    failed_when:
       (iib is not defined or iib | length == 0)
-
-  - name: Login via kubeadmin
-    ansible.builtin.shell: |
-      oc login -u kubeadmin -p "{{ kubeadminpass }}" "{{ kubeadminapi }}"
-
-  - name: Get kubeadmin token
-    ansible.builtin.shell: |
-      oc whoami -t
-    register: oc_whoami_raw
-
-  - name: Set kubeadmin token
-    ansible.builtin.set_fact:
-      kubeadmin_token: "{{ oc_whoami_raw.stdout }}"
 
   - name: Get cluster version
     # E.g. 4.13.0-rc.6 or 4.12.16
@@ -38,5 +23,3 @@
   - name: Set up internal registry
     ansible.builtin.include_tasks: setup-internal-registry.yml
     when: registry_supports_v2
-      
-

@@ -4,3 +4,4 @@ kubeadminpass: "{{ lookup('env', 'KUBEADMINPASS') }}"
 kubeadminapi: "{{ lookup('env', 'KUBEADMINAPI') }}"
 iib: "{{ lookup('env', 'IIB') }}"
 internal_registry_ns: openshift-marketplace
+internal_registry_email: noemail@localhost
