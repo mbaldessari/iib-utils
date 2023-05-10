@@ -49,7 +49,7 @@ function wait_for_new_catalog() {
     local iib=$2
     sTime=1
     while ! oc get -n "${MIRROR_NAMESPACE}" packagemanifests -l "catalog=iib-${iib}" --field-selector "metadata.name=${operator}" \
-        -o jsonpath='{.items[0].status.defaultChannel}'; do
+        -o jsonpath='{.items[0].status.defaultChannel}' &> /dev/null; do
             echo "Waiting for the package manifest to appear"
             sleep $sTime
             sTime=20
