@@ -97,17 +97,30 @@
 # }
 - name: Create dict with full image name+sha -> url where we will fetch it from
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item: {'source': all_existing_images.results[counter].stdout } }, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({ item: {'source': all_existing_images.results[counter].stdout,
+      'source_nosha': all_existing_images.results[counter].stdout|regex_replace('@.*$', '') } }, recursive=true) }}"
   loop: "{{ all_images }}"
   loop_control:
     index_var: counter
 
 - name: Create dict with full image name+sha -> mirror destination
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item: {'mirrordest': mirror_dest + item|basename } }, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({ item: {'mirrordest': mirror_dest + item|basename,
+      'mirrordest_nosha': (mirror_dest + item|basename) | regex_replace('@.*$', '') } }, recursive=true) }}"
   loop: "{{ all_images }}"
 
+# At this point the dictionary looks as follows:
+# "registry.redhat.io/rhel8/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3": {
+#   "mirrordest": "default-route-openshift-image-registry.apps.mcg-hub.blueprints.rhecoeng.com/openshift-marketplace/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3",
+#   "mirrordest_nosha": "default-route-openshift-image-registry.apps.mcg-hub.blueprints.rhecoeng.com/openshift-marketplace/redis-6",
+#   "source": "registry.redhat.io/rhel8/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3",
+#   "source_nosha": "registry.redhat.io/rhel8/redis-6"
+# }
 - name: Print dict with full images
   debug:
     msg: "{{ image_urls }}"
 
+- name: Template out imageDigestMirror.yaml
+  ansible.builtin.template:
+    src: ./templates/imageDigestMirror.yaml.j2
+    dest: "{{ iib_local_folder }}/imageDigestMirror.yaml"
