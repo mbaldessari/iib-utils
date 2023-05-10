@@ -1,5 +1,7 @@
 #!/bin/bash -ex
 
+set -o pipefail
+
 INDEX_IMAGES="$*"
 : ${IIB_SOURCE=registry-proxy.engineering.redhat.com}
 : ${MIRROR_NAMESPACE=abeekhof}
