@@ -160,44 +160,54 @@
     oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
   register: master_ready_machinecount_raw
 
-- name: Apply imageDigestMirror
+- name: Will the imageDigestMirror trigger any changes
   ansible.builtin.shell:
-    oc apply -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
-
-# NOTE(bandini): The reason to not fail on these two observedGeneration waiting
-# tasks, is to make this idempotent: If the 'oc apply' above does *not* trigger
-# any changes, the observed generation tasks will just timeout. And then we still
-# wait to make sure that the readyworker count is correct.
-- name: Wait for MCP new observedGeneration worker
-  ansible.builtin.shell:
-    oc get mcp/worker -o jsonpath='{.status.observedGeneration}'
-  register: worker_current_observed_generation_raw
-  retries: 10
-  delay: 20
-  until: worker_current_observed_generation_raw.stdout != worker_observed_generation_raw.stdout
+    oc diff -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
   failed_when: false
+  register: oc_mirror_diff
 
-- name: Wait for MCP new observedGeneration master
-  ansible.builtin.shell:
-    oc get mcp/master -o jsonpath='{.status.observedGeneration}'
-  register: master_current_observed_generation_raw
-  retries: 10
-  delay: 20
-  until: master_current_observed_generation_raw.stdout != master_observed_generation_raw.stdout
-  failed_when: false
+# We only run this piece if there is an actual change in the mirror digest for images
+- name: Apply imageDigestMirror and wait for MCP to complete
+  when: oc_mirror_diff is failed
+  block:
+  - name: Apply imageDigestMirror
+    ansible.builtin.shell:
+      oc apply -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
 
-- name: Wait for MCP readyMachineCount to be the same as before applying the digest (worker)
-  ansible.builtin.shell:
-    oc get mcp/worker -o jsonpath='{.status.readyMachineCount}'
-  register: worker_current_ready_machinecount_raw
-  retries: 30
-  delay: 10
-  until: worker_current_ready_machinecount_raw.stdout == worker_ready_machinecount_raw.stdout
+  # NOTE(bandini): The reason to not fail on these two observedGeneration waiting
+  # tasks, is to make this idempotent: If the 'oc apply' above does *not* trigger
+  # any changes, the observed generation tasks will just timeout. And then we still
+  # wait to make sure that the readyworker count is correct.
+  - name: Wait for MCP new observedGeneration worker
+    ansible.builtin.shell:
+      oc get mcp/worker -o jsonpath='{.status.observedGeneration}'
+    register: worker_current_observed_generation_raw
+    retries: 10
+    delay: 20
+    until: worker_current_observed_generation_raw.stdout != worker_observed_generation_raw.stdout
+    failed_when: false
 
-- name: Wait for MCP readyMachineCount to be the same as before applying the digest (master)
-  ansible.builtin.shell:
-    oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
-  register: master_current_ready_machinecount_raw
-  retries: 30
-  delay: 10
-  until: master_current_ready_machinecount_raw.stdout == master_ready_machinecount_raw.stdout
+  - name: Wait for MCP new observedGeneration master
+    ansible.builtin.shell:
+      oc get mcp/master -o jsonpath='{.status.observedGeneration}'
+    register: master_current_observed_generation_raw
+    retries: 10
+    delay: 20
+    until: master_current_observed_generation_raw.stdout != master_observed_generation_raw.stdout
+    failed_when: false
+
+  - name: Wait for MCP readyMachineCount to be the same as before applying the digest (worker)
+    ansible.builtin.shell:
+      oc get mcp/worker -o jsonpath='{.status.readyMachineCount}'
+    register: worker_current_ready_machinecount_raw
+    retries: 30
+    delay: 10
+    until: worker_current_ready_machinecount_raw.stdout == worker_ready_machinecount_raw.stdout
+
+  - name: Wait for MCP readyMachineCount to be the same as before applying the digest (master)
+    ansible.builtin.shell:
+      oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
+    register: master_current_ready_machinecount_raw
+    retries: 30
+    delay: 10
+    until: master_current_ready_machinecount_raw.stdout == master_ready_machinecount_raw.stdout
