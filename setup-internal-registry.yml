@@ -28,7 +28,9 @@
   register: registry_route_raw
   retries: 20
   delay: 10
-  failed_when: (registry_route_raw is failed) or (registry_route_raw.stdout | length == 0)
+  until:
+  - registry_route_raw is not failed
+  - registry_route_raw.stdout | length > 0
 
 - name: Set route fact
   ansible.builtin.set_fact:
