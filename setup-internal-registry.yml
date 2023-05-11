@@ -74,6 +74,20 @@
   ansible.builtin.shell: |
     oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
 
+- name: Before proceeding here we need to make sure that the MCPs have all settled
+  ansible.builtin.shell: |
+    if [ $(oc get mcp/master -o jsonpath='{.status.readyMachineCount}') != $(oc get mcp/master -o jsonpath='{.status.machineCount}') ]; then
+      exit 1
+    fi
+    if [ $(oc get mcp/worker -o jsonpath='{.status.readyMachineCount}') != $(oc get mcp/worker -o jsonpath='{.status.machineCount}') ]; then
+      exit 1
+    fi
+  retries: 30
+  delay: 20
+  register: mcp_ready
+  until: mcp_ready is not failed
+
+
 - name: Login the internal registry with podman
   ansible.builtin.shell:
     podman login --tls-verify=false --username unused --password "{{ kubeadmin_token }}" "https://{{ registry_route }}"

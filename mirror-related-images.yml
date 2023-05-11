@@ -167,8 +167,9 @@
   register: oc_mirror_diff
 
 # We only run this piece if there is an actual change in the mirror digest for images
+# cannot use 'is failed' as that is always false when setting failed_when: false above
 - name: Apply imageDigestMirror and wait for MCP to complete
-  when: oc_mirror_diff is failed
+  when: oc_mirror_diff.rc != 0
   block:
   - name: Apply imageDigestMirror
     ansible.builtin.shell:
