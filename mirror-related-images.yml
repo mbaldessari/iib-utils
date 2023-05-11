@@ -130,6 +130,8 @@
     src: ./templates/mirror.map.j2
     dest: "{{ iib_local_folder }}/mirror.map"
 
+# NOTE(bandini): mirror.map *must* have a tag (we use the IIB number) on the image on the right side
+# otherwise, the image will be uplaoded and will exist in S3 but it won't exist in the registry's catalog!!
 - name: Mirror all the needed images
   ansible.builtin.shell:
     oc image mirror -a "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson" -f mirror.map --insecure --keep-manifest-list 2>&1 | tee -a image-mirror.log
