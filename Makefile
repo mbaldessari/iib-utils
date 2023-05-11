@@ -6,5 +6,8 @@ help: ## Help
 ##@ IIB-related tasks
 .PHONY: iib
 iib: ## Call IIB playbook
-	@echo "Start"
 	ANSIBLE_LOCALHOST_WARNING=false ansible-playbook iib.yml
+
+.PHONY: lookup
+lookup: ## Looks up IIB
+	go run main.go
