@@ -15,3 +15,11 @@ Run `make iib` with the following environment variables set:
 * KUBEADMINAPI=https://api.mcg-hub.blueprints.rhecoeng.com:6443
 * IIB=492329
 * KUBEADMINPASS="11111-22222-33333-44444"
+
+## Useful commands
+
+* List all images uploaded to the internal registry:
+
+    oc exec -it -n openshift-image-registry $(oc get pods -n openshift-image-registry -o json | jq -r '.items[].metadata.name | select(. | test("^image-registry-"))' | head -n1) -- bash -c "curl -k -u kubeadmin:$(oc whoami -t) https://localhost:5000/v2/_catalog"
+
+

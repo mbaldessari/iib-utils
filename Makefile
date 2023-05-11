@@ -6,8 +6,14 @@ help: ## Help
 ##@ IIB-related tasks
 .PHONY: iib
 iib: ## Call IIB playbook
-	ANSIBLE_LOCALHOST_WARNING=false ansible-playbook iib.yml
+	ansible-playbook iib.yml
 
 .PHONY: lookup
 lookup: ## Looks up IIB
 	go run main.go
+
+##@ Test and Linters Tasks
+
+.PHONY: ansible-lint
+ansible-lint: ## run ansible lint on ansible/ folder
+	ansible-lint -vvv *.yml
