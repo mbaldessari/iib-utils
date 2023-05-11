@@ -11,4 +11,8 @@ spec:
         - {{ item.mirrordest_nosha }}
       source: {{ item.source_nosha }}
       mirrorSourcePolicy: NeverContactSource
+    - mirrors:
+        - {{ item.mirrordest_nosha }}
+      source: {{ item.image_nosha }}
+      mirrorSourcePolicy: NeverContactSource
 {% endfor %}
