@@ -5,7 +5,7 @@ that contains a bunch of references to operators that can be installed in an Ope
 
 Run `make lookup` to see which IIBs are available.
 
-Typically IIB are pre-release stuff that leaves on some internal boxes. What these scripts do is fetch
+Typically IIB are pre-release stuff that lives on some internal boxes. What these scripts do is fetch
 the IIB internally, mirror it to the registry inside the cluster, parse all the needed images and mirror
 those to the internal cluster registry and then set up the registries.conf files on all nodes so
 that the images used are the ones pointing to the internal cluster.
