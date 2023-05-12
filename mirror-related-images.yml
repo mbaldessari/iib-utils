@@ -126,10 +126,18 @@
   ansible.builtin.debug:
     msg: "{{ image_urls }}"
 
-- name: Template out imageDigestMirror.yaml
+# OCP 4.13 uses the new fangled "ImageDigestMirrorSet", older OCPs use "ImageContentSourcePolicy"
+- name: Template out imageMirror.yaml (OCP >= 4.13)
   ansible.builtin.template:
     src: ./templates/imageDigestMirror.yaml.j2
-    dest: "{{ iib_local_folder }}/imageDigestMirror.yaml"
+    dest: "{{ iib_local_folder }}/imageMirror.yaml"
+  when: use_internal_registry
+
+- name: Template out imageMirror.yaml (OCP < 4.13)
+  ansible.builtin.template:
+    src: ./templates/imageContentSourcePolicy.yaml.j2
+    dest: "{{ iib_local_folder }}/imageMirror.yaml"
+  when: not use_internal_registry
 
 - name: Template out mirror.map
   ansible.builtin.template:
@@ -168,20 +176,23 @@
     oc get mcp/master -o jsonpath='{.status.readyMachineCount}'
   register: master_ready_machinecount_raw
 
-- name: Will the imageDigestMirror trigger any changes
+- name: Will the imageMirror trigger any changes
   ansible.builtin.shell:
-    oc diff -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
+    oc diff -f "{{ iib_local_folder }}/imageMirror.yaml"
   failed_when: false
   register: oc_mirror_diff
+  when: use_internal_registry
 
 # We only run this piece if there is an actual change in the mirror digest for images
 # cannot use 'is failed' as that is always false when setting failed_when: false above
-- name: Apply imageDigestMirror and wait for MCP to complete
-  when: oc_mirror_diff.rc != 0
+- name: Apply imageMirror and wait for MCP to complete
+  when:
+    - use_internal_registry
+    - oc_mirror_diff.rc != 0
   block:
-  - name: Apply imageDigestMirror
+  - name: Apply imageMirror
     ansible.builtin.shell:
-      oc apply -f "{{ iib_local_folder }}/imageDigestMirror.yaml"
+      oc apply -f "{{ iib_local_folder }}/imageMirror.yaml"
 
   # NOTE(bandini): The reason to not fail on these two observedGeneration waiting
   # tasks, is to make this idempotent: If the 'oc apply' above does *not* trigger
