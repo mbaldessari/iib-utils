@@ -29,9 +29,12 @@
     dest: "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
     content: "{{ pull_secrets | to_nice_json }}"
 
-- name: Update pull-secret in the cluster
-  ansible.builtin.shell: |
-    oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
+# We cannot store the logins back in the cluster, because quay.io would be overwritten and not have
+# access to the images openshift needs. See:
+# https://github.com/moby/moby/issues/37569
+# - name: Update pull-secret in the cluster
+#   ansible.builtin.shell: |
+#     oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
 
 - name: Set Mirror URL fact for external mirror IIB
   ansible.builtin.set_fact:

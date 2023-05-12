@@ -104,11 +104,23 @@
   loop_control:
     index_var: counter
 
-- name: Create dict with full image name+sha -> mirror destination
+- name: Create dict with full image name+sha -> mirror destination (OCP >= 4.13)
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item: {'mirrordest': mirror_dest + item|basename,
-      'mirrordest_nosha': (mirror_dest + item|basename) | regex_replace('@.*$', '') } }, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({ item:
+      {'mirrordest': mirror_dest + item|basename,
+       'mirrordest_nosha': (mirror_dest + item|basename) | regex_replace('@.*$', ''),
+       'mirrordest_tag': iib }}, recursive=true) }}"
   loop: "{{ all_images }}"
+  when: use_internal_registry
+
+- name: Create dict with full image name+sha -> mirror destination (OCP < 4.13)
+  ansible.builtin.set_fact:
+    image_urls: "{{ image_urls | default({}) | combine({ item:
+      {'mirrordest': mirror_dest + '@' + item | basename | regex_replace('^.*@', ''),
+       'mirrordest_nosha': mirror_dest,
+       'mirrordest_tag': 'tag-' + item | basename | regex_replace('^.*@sha256:', '') }}, recursive=true) }}"
+  loop: "{{ all_images }}"
+  when: not use_internal_registry
 
 - name: Create dict with full image name+sha -> image key without sha
   ansible.builtin.set_fact:
@@ -181,14 +193,11 @@
     oc diff -f "{{ iib_local_folder }}/imageMirror.yaml"
   failed_when: false
   register: oc_mirror_diff
-  when: use_internal_registry
 
 # We only run this piece if there is an actual change in the mirror digest for images
 # cannot use 'is failed' as that is always false when setting failed_when: false above
 - name: Apply imageMirror and wait for MCP to complete
-  when:
-    - use_internal_registry
-    - oc_mirror_diff.rc != 0
+  when: oc_mirror_diff.rc != 0
   block:
   - name: Apply imageMirror
     ansible.builtin.shell:
