@@ -10,11 +10,26 @@ the IIB internally, mirror it to the registry inside the cluster, parse all the 
 those to the internal cluster registry and then set up the registries.conf files on all nodes so
 that the images used are the ones pointing to the internal cluster.
 
-Run `make iib` with the following environment variables set:
+## Usage
 
-* KUBEADMINAPI=https://api.mcg-hub.blueprints.rhecoeng.com:6443
+### OCP 4.13 and onwards
+
+Since 4.13 supports an internal registry that can cope with v2 docker manifests, we
+use that. Run `make iib` with the following environment variables set:
+
 * IIB=492329
+* KUBEADMINAPI=https://api.mcg-hub.blueprints.rhecoeng.com:6443
 * KUBEADMINPASS="11111-22222-33333-44444"
+
+### OCP 4.12 and previous versions
+
+Due to the lack of v2 manifest support on the internal registry, we use an external
+registry. Run `make iib` with the following environment variables set:
+
+* IIB=492329
+* REGISTRY=quay.io/rhn_support_mbaldess/iib
+* REGISTRY_TOKEN=<username>:<token>
+
 
 ## Useful commands
 

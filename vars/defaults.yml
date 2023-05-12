@@ -1,6 +1,8 @@
 rh_internal_registry: registry-proxy.engineering.redhat.com
 
-quay_ns: abeekhof
+external_registry: "{{ lookup('env', 'REGISTRY') }}"
+external_registry_token: "{{ lookup('env', 'REGISTRY_TOKEN') }}"
+external_registry_email: noemail@localhost
 
 kubeadminpass: "{{ lookup('env', 'KUBEADMINPASS') }}"
 # E.g. https://api.mcg-hub.blueprints.rhecoeng.com:6443
