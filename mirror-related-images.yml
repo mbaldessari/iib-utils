@@ -3,6 +3,9 @@
     oc get -n "{{ internal_registry_ns }}" packagemanifests -l "catalog=iib-{{ iib }}" --field-selector "metadata.name={{ operator }}" \
       -o jsonpath='{.items[0].status.defaultChannel}'
   register: default_channel_raw
+  retries: 10
+  delay: 10
+  until: default_channel_raw is not failed
 
 - name: Set default channel fact
   ansible.builtin.set_fact:
