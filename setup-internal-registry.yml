@@ -1,22 +1,7 @@
-- name: Check that KUBEADMINAPI, KUBEADMINPASS
+- name: Check that INTERNAL_REGISTRY_PASS is set
   ansible.builtin.fail:
-    msg: "KUBEADMINAPI: '{{ kubeadminapi }}', KUBEADMINPASS: '{{ kubeadminpass }}'. Both need to be set"
-  failed_when: >
-    (kubeadminapi is not defined or kubeadminapi | length == 0) or
-    (kubeadminpass is not defined or kubeadminpass | length == 0)
-
-- name: Login via kubeadmin
-  ansible.builtin.shell: |
-    oc login -u kubeadmin -p "{{ kubeadminpass }}" "{{ kubeadminapi }}"
-
-- name: Get kubeadmin token
-  ansible.builtin.shell: |
-    oc whoami -t
-  register: oc_whoami_raw
-
-- name: Set kubeadmin token
-  ansible.builtin.set_fact:
-    kubeadmin_token: "{{ oc_whoami_raw.stdout }}"
+    msg: "INTERNAL_REGISTRY_PASS: '{{ internal_registry_pass }}' is not set"
+  failed_when: internal_registry_pass is not defined or internal_registry_pass | length == 0
 
 - name: Expose internal registry route
   ansible.builtin.shell: |
@@ -46,19 +31,67 @@
     oc patch image.config.openshift.io/cluster --patch "{\"spec\":{\"registrySources\":{\"insecureRegistries\":[ \"registry-proxy.engineering.redhat.com\",
     \"image-registry.openshift-image-registry.svc:5000\", \"{{ registry_route }}\"]}}}" --type=merge
 
+- name: Get a tempfile for the htpasswd file
+  ansible.builtin.tempfile:
+    state: file
+  register: httpasswd_temp
+
+- name: Create htpasswd user
+  ansible.builtin.shell:
+    htpasswd -c -B -b "{{ httpasswd_temp.path }}" "{{ internal_registry_user }}" "{{ internal_registry_pass }}"
+
+- name: Delete OC secret
+  ansible.builtin.shell: |
+    oc delete secret htpass-secret -n openshift-config
+  failed_when: false
+
+- name: Create OC secret
+  ansible.builtin.shell: |
+    oc create secret generic htpass-secret --from-file=htpasswd="{{ httpasswd_temp.path }}" -n openshift-config
+
+- name: Template Oauth template
+  ansible.builtin.template:
+    src: ./templates/htpasswd-oauth.yaml
+    dest: /tmp/htpasswd-oauth.yaml
+
+- name: Apply oauth settings
+  ansible.builtin.shell:
+    oc apply -f /tmp/htpasswd-oauth.yaml
+
+- name: Add local registry to pull secrets and set auth fact
+  ansible.builtin.set_fact:
+    pull_secrets_new: "{{ pull_secrets_raw.stdout | from_json }}"
+    internal_registry_auth: "{{ (internal_registry_user ':' + registry_token) | b64encode }}"
+
 - name: Get current cluster pull secrets
   ansible.builtin.shell:
     oc extract secret/pull-secret -n openshift-config --to=-
   register: pull_secrets_raw
 
-- name: Add local registry to pull secrets and set auth fact
+- name: Login to "{{ internal_registry_user }}"
+  ansible.builtin.shell:
+    oc login -u "{{ internal_registry_user }}" -p"{{ internal_registry_pass }}"
+  retries: 20
+  delay: 30
+  register: registry_login
+  until: registry_login is not failed
+
+- name: Get "{{ internal_registry_user }}" token
+  ansible.builtin.shell:
+    oc whoami -t
+  register: registry_token_raw
+
+- name: Set registry user token
   ansible.builtin.set_fact:
-    pull_secrets_new: "{{ pull_secrets_raw.stdout | from_json }}"
-    internal_registry_auth: "{{ ('kubeadmin:' + kubeadmin_token) | b64encode }}"
+    registry_token: "{{ registry_token_raw.stdout }}"
 
 - name: Add local registry to pull secrets
   ansible.builtin.set_fact:
     pull_secrets: "{{ pull_secrets_new | combine({'auths': { registry_route: { 'email': internal_registry_email, 'auth': internal_registry_auth }}}, recursive=true) }}"
+
+- name: Log out "{{ internal_registry_user }}" user
+  ansible.builtin.shell:
+    oc logout "{{ internal_registry_user }}"
 
 - name: Get a tempfile for the pull secrets
   ansible.builtin.tempfile:
@@ -89,7 +122,7 @@
 
 - name: Login the internal registry with podman
   ansible.builtin.shell:
-    podman login --tls-verify=false --username unused --password "{{ kubeadmin_token }}" "https://{{ registry_route }}"
+    podman login --tls-verify=false --username unused --password "{{ registry_token }}" "https://{{ registry_route }}"
 
 - name: Set Mirror URL fact for internal mirror IIB
   ansible.builtin.set_fact:
