@@ -58,16 +58,6 @@
   ansible.builtin.shell:
     oc apply -f /tmp/htpasswd-oauth.yaml
 
-- name: Add local registry to pull secrets and set auth fact
-  ansible.builtin.set_fact:
-    pull_secrets_new: "{{ pull_secrets_raw.stdout | from_json }}"
-    internal_registry_auth: "{{ (internal_registry_user ':' + registry_token) | b64encode }}"
-
-- name: Get current cluster pull secrets
-  ansible.builtin.shell:
-    oc extract secret/pull-secret -n openshift-config --to=-
-  register: pull_secrets_raw
-
 - name: Login to "{{ internal_registry_user }}"
   ansible.builtin.shell:
     oc login -u "{{ internal_registry_user }}" -p"{{ internal_registry_pass }}"
@@ -85,13 +75,31 @@
   ansible.builtin.set_fact:
     registry_token: "{{ registry_token_raw.stdout }}"
 
+- name: Log out "{{ internal_registry_user }}" user
+  ansible.builtin.shell:
+    oc logout
+
+- name: Switch back to the admin context
+  ansible.builtin.shell:
+    oc config use-context admin
+
+- name: Add "{{ internal_registry_user }} to registry-editor role
+  ansible.builtin.shell:
+    oc policy add-role-to-user registry-editor "{{ internal_registry_user }}"
+
+- name: Get current cluster pull secrets
+  ansible.builtin.shell:
+    oc extract secret/pull-secret -n openshift-config --to=-
+  register: pull_secrets_raw
+
+- name: Add local registry to pull secrets and set auth fact
+  ansible.builtin.set_fact:
+    pull_secrets_new: "{{ pull_secrets_raw.stdout | from_json }}"
+    internal_registry_auth: "{{ (internal_registry_user + ':' + registry_token) | b64encode }}"
+
 - name: Add local registry to pull secrets
   ansible.builtin.set_fact:
     pull_secrets: "{{ pull_secrets_new | combine({'auths': { registry_route: { 'email': internal_registry_email, 'auth': internal_registry_auth }}}, recursive=true) }}"
-
-- name: Log out "{{ internal_registry_user }}" user
-  ansible.builtin.shell:
-    oc logout "{{ internal_registry_user }}"
 
 - name: Get a tempfile for the pull secrets
   ansible.builtin.tempfile:

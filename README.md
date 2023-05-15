@@ -18,8 +18,7 @@ Since 4.13 supports an internal registry that can cope with v2 docker manifests,
 use that. Run `make iib` with the following environment variables set:
 
 * IIB=492329
-* KUBEADMINAPI=https://api.mcg-hub.blueprints.rhecoeng.com:6443
-* KUBEADMINPASS="11111-22222-33333-44444"
+* INTERNAL_REGISTRY_PASS="11111-22222-33333-44444"
 
 ### OCP 4.12 and previous versions
 
