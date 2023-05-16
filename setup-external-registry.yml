@@ -6,7 +6,7 @@
     (external_registry_token is not defined or external_registry_token | length == 0)
 
 - name: Get current cluster pull secrets
-  ansible.builtin.shell:
+  ansible.builtin.command:
     oc extract secret/pull-secret -n openshift-config --to=-
   register: pull_secrets_raw
 
