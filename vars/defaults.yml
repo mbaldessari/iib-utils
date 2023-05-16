@@ -16,4 +16,6 @@ internal_registry_pass: "{{ lookup('env', 'INTERNAL_REGISTRY_USER') }}"
 iib: "{{ lookup('env', 'IIB') }}"
 iib_local_folder: "/tmp/manifest-{{ iib }}"
 
-operator: openshift-gitops-operator
+# We can use default(, true) below because OPERATOR is a string and not
+# a boolean
+operator: "{{ lookup('env', 'OPERATOR') | default('openshift-gitops-operator', true) }}"

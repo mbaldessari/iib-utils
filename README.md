@@ -12,6 +12,8 @@ that the images used are the ones pointing to the internal cluster.
 
 ## Usage
 
+By default the operator to be installed from the IIB is `openshift-gitops-operator`. You can override this through the `OPERATOR` env variable.
+
 ### OCP 4.13 and onwards
 
 Since 4.13 supports an internal registry that can cope with v2 docker manifests, we
