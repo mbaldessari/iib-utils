@@ -1,4 +1,4 @@
-- name: Get "{{ operator }}" default channel in the IIB
+- name: Get default channel in the IIB for "{{ operator }}"
   ansible.builtin.shell: |
     oc get -n "{{ internal_registry_ns }}" packagemanifests -l "catalog=iib-{{ iib }}" --field-selector "metadata.name={{ operator }}" \
       -o jsonpath='{.items[0].status.defaultChannel}'
@@ -11,7 +11,7 @@
   ansible.builtin.set_fact:
     default_channel: "{{ default_channel_raw.stdout }}"
 
-- name: Get all related images for "{{ operator }}" in the IIB
+- name: Get all related images in the IIB for "{{ operator }}"
   ansible.builtin.shell: |
     oc get packagemanifests -l "catalog=iib-{{ iib }}" --field-selector "metadata.name={{ operator }}" \
       -o jsonpath="{.items[0].status.channels[?(@.name==\"{{ default_channel }}\")].currentCSVDesc.relatedImages}"
@@ -23,6 +23,7 @@
 
 - name: Fetch all operator bundles from mapping.txt
   ansible.builtin.shell:
+    set -o pipefail
     grep -e "^registry-proxy.*bundle" "{{ iib_local_folder }}/mapping.txt" | cut -f1 -d=
   register: operator_bundles_raw
 
@@ -35,15 +36,15 @@
 #   "registry.redhat.io/openshift4/ose-haproxy-router@sha256:edf7ce748b703e195220b7bd7b42fa2caa4cdfd96840445e096036a0d85f1ff2",
 #   "registry.redhat.io/openshift-gitops-1/kam-delivery-rhel8@sha256:10c5a1b6a0858a812117e6fb2b28d37617d9eb83da5e4fb647059ff740a14461",
 #   "registry.redhat.io/openshift-gitops-1/dex-rhel8@sha256:6a3eaee6a4f8cb9a35363bf4c7f83a7fa2042ae62bdaa700ecd0893dd52276f5",
-#   "registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:e463314596098a4e774e0ddaed0009bfdad4d79b664e28fef219c796679ee6a0" ]
+#   "registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-operator-bundle@sha256:e463314596098a4e774e0dda..." ]
 - name: Set all images fact (related images + operator bundles)
   ansible.builtin.set_fact:
     all_images: "{{ related_images + operator_bundles_raw.stdout_lines }}"
 
 # A mapping.txt file will have lines like the following. Note how the image to the right of '='
 # does have a shortened hash! :
-# registry.redhat.io/openshift-gitops-1/gitops-rhel8@sha256:5ff915a399c1cc12d4f932652b410bf7399850934833e755267bdd409f4ce11b=registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8:8256cca6
-# registry.redhat.io/openshift4/ose-haproxy-router@sha256:edf7ce748b703e195220b7bd7b42fa2caa4cdfd96840445e096036a0d85f1ff2=registry-proxy.engineering.redhat.com/rh-osbs/openshift4-ose-haproxy-router:a636cbea
+# registry.redhat.io/openshift-gitops-1/gitops-rhel8@sha256:5ff...=registry-proxy.engineering.redhat.com/rh-osbs/openshift-gitops-1-gitops-rhel8:8256cca6
+# registry.redhat.io/openshift4/ose-haproxy-router@sha256:edf..=registry-proxy.engineering.redhat.com/rh-osbs/openshift4-ose-haproxy-router:a636cbea
 #
 # Now what we are doing here is the following:
 # 1. For every image we get from the bundle (contained in all_images var) we check if it exists. If it does great, skip to the next image
@@ -52,6 +53,7 @@
 #    If the image is found, great. If not we need to error out because we have no idea where we can fetch it from
 - name: Find out which images really exist by consulting mapping.txt
   ansible.builtin.shell: |
+    set -o pipefail
     left_sha=$(echo "{{ image }}" | sed -e 's/^.*@//')
     right=$(grep "{{ image }}" "{{ iib_local_folder }}/mapping.txt" | cut -f2 -d=)
     right_base=$(echo $right | sed -e 's/:.*$//' -e 's/@.*$//')
@@ -101,38 +103,38 @@
 # }
 - name: Create dict with full image name+sha -> url where we will fetch it from
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item: {'source': all_existing_images.results[counter].stdout,
-      'source_nosha': all_existing_images.results[counter].stdout|regex_replace('@.*$', '') } }, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({item: {'source': all_existing_images.results[counter].stdout,
+      'source_nosha': all_existing_images.results[counter].stdout | regex_replace('@.*$', '')}}, recursive=true) }}"
   loop: "{{ all_images }}"
   loop_control:
     index_var: counter
 
 - name: Create dict with full image name+sha -> mirror destination (OCP >= 4.13)
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item:
-      {'mirrordest': mirror_dest + item|basename,
-       'mirrordest_nosha': (mirror_dest + item|basename) | regex_replace('@.*$', ''),
-       'mirrordest_tag': iib }}, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({item:
+      {'mirrordest': mirror_dest + item | basename,
+       'mirrordest_nosha': (mirror_dest + item | basename) | regex_replace('@.*$', ''),
+       'mirrordest_tag': iib}}, recursive=true) }}"
   loop: "{{ all_images }}"
   when: use_internal_registry
 
 - name: Create dict with full image name+sha -> mirror destination (OCP < 4.13)
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item:
+    image_urls: "{{ image_urls | default({}) | combine({item:
       {'mirrordest': mirror_dest + '@' + item | basename | regex_replace('^.*@', ''),
        'mirrordest_nosha': mirror_dest,
-       'mirrordest_tag': 'tag-' + item | basename | regex_replace('^.*@sha256:', '') }}, recursive=true) }}"
+       'mirrordest_tag': 'tag-' + item | basename | regex_replace('^.*@sha256:', '')}}, recursive=true) }}"
   loop: "{{ all_images }}"
   when: not use_internal_registry
 
 - name: Create dict with full image name+sha -> image key without sha
   ansible.builtin.set_fact:
-    image_urls: "{{ image_urls | default({}) | combine({ item: {'image_nosha': item | regex_replace('@.*$', '') } }, recursive=true) }}"
+    image_urls: "{{ image_urls | default({}) | combine({item: {'image_nosha': item | regex_replace('@.*$', '')}}, recursive=true) }}"
   loop: "{{ all_images }}"
 
 # At this point the dictionary looks as follows:
 # "registry.redhat.io/rhel8/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3": {
-#   "mirrordest": "default-route-openshift-image-registry.apps.mcg-hub.blueprints.rhecoeng.com/openshift-marketplace/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3",
+#   "mirrordest": "default-route-openshift-image-registry.apps.mcg-hub.blueprints.rhecoeng.com/openshift-marketplace/redis-6@sha256:535...
 #   "mirrordest_nosha": "default-route-openshift-image-registry.apps.mcg-hub.blueprints.rhecoeng.com/openshift-marketplace/redis-6",
 #   "source": "registry.redhat.io/rhel8/redis-6@sha256:53598a6effeb90e4f1b005b2521beffd2fa2b0c52d0e7f2347ee2abd2577cab3",
 #   "source_nosha": "registry.redhat.io/rhel8/redis-6"
@@ -146,18 +148,21 @@
   ansible.builtin.template:
     src: ./templates/imageDigestMirror.yaml.j2
     dest: "{{ iib_local_folder }}/imageMirror.yaml"
+    mode: "0644"
   when: use_internal_registry
 
 - name: Template out imageMirror.yaml (OCP < 4.13)
   ansible.builtin.template:
     src: ./templates/imageContentSourcePolicy.yaml.j2
     dest: "{{ iib_local_folder }}/imageMirror.yaml"
+    mode: "0644"
   when: not use_internal_registry
 
 - name: Template out mirror.map
   ansible.builtin.template:
     src: ./templates/mirror.map.j2
     dest: "{{ iib_local_folder }}/mirror.map"
+    mode: "0644"
 
 # NOTE(bandini): mirror.map *must* have a tag (we use the IIB number) on the image on the right side
 # otherwise, the image will be uplaoded and will exist in S3 but it won't exist in the registry's catalog!!

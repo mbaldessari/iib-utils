@@ -58,7 +58,7 @@
 
 - name: Add local registry to pull secrets
   ansible.builtin.set_fact:
-    pull_secrets: "{{ pull_secrets_new | combine({'auths': { registry_route: { 'email': internal_registry_email, 'auth': internal_registry_auth }}}, recursive=true) }}"
+    pull_secrets: "{{ pull_secrets_new | combine({'auths': {registry_route: { 'email': internal_registry_email, 'auth': internal_registry_auth}}}, recursive=true) }}"
 
 - name: Get a tempfile for the pull secrets
   ansible.builtin.tempfile:
@@ -69,6 +69,7 @@
   ansible.builtin.copy:
     dest: "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
     content: "{{ pull_secrets | to_nice_json }}"
+    mode: "0644"
 
 - name: Update pull-secret in the cluster
   ansible.builtin.shell: |

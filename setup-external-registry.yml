@@ -17,7 +17,7 @@
 
 - name: Add local registry to pull secrets
   ansible.builtin.set_fact:
-    pull_secrets: "{{ pull_secrets_new | combine({'auths': { external_registry.split('/')[0]: { 'email': external_registry_email, 'auth': external_registry_auth }}}, recursive=true) }}"
+    pull_secrets: "{{ pull_secrets_new | combine({'auths': {external_registry.split('/')[0]: {'email': external_registry_email, 'auth': external_registry_auth}}}, recursive=true) }}"
 
 - name: Get a tempfile for the pull secrets
   ansible.builtin.tempfile:
@@ -28,6 +28,7 @@
   ansible.builtin.copy:
     dest: "{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
     content: "{{ pull_secrets | to_nice_json }}"
+    mode: "0644"
 
 # We cannot store the logins back in the cluster, because quay.io would be overwritten and not have
 # access to the images openshift needs. See:
@@ -35,7 +36,6 @@
 # - name: Update pull-secret in the cluster
 #   ansible.builtin.shell: |
 #     oc set data secret/pull-secret -n openshift-config --from-file="{{ pull_secrets_tempfolder.path }}/.dockerconfigjson"
-
 - name: Set Mirror URL fact for external mirror IIB
   ansible.builtin.set_fact:
     mirror_iib: "{{ external_registry }}"
@@ -43,4 +43,3 @@
 - name: Set Mirror URL fact for external mirror
   ansible.builtin.set_fact:
     mirror_dest: "{{ external_registry }}"
-
